@@ -19,9 +19,22 @@
 
 ## 版本
 
-0.5.0
+0.6.0
 
 ## 更新日志
+
+### v0.6.0 (2026-06-30)
+
+- **GitHub 仓库最佳实践**: 完整 CI/CD 流水线，包含 GitHub Actions、CodeQL 安全扫描、Dependabot 依赖更新
+- **Issue 与 PR 模板**: 标准化的 Bug 报告、功能请求和 Pull Request 模板，保证贡献一致性
+- **仓库治理**: CODEOWNERS、SECURITY.md、CODE_OF_CONDUCT.md、CONTRIBUTING.md 专业项目管理
+- **健康检查端点**: 新增 `/api/health` 端点，支持 Docker 健康检查和监控
+- **Docker 健康检查**: Dockerfile 内置 HEALTHCHECK 指令，支持容器编排
+- **技术栈升级**: better-sqlite3 12.x、axios 1.18.x、TypeScript target ES2023
+- **TypeScript 严格模式**: 新增 noImplicitReturns 和 noFallthroughCasesInSwitch，代码更安全
+- **CI 矩阵测试**: 在 Node.js 20.x 和 22.x 上运行测试，确保兼容性
+- **版本统一**: package.json / server.ts / Docker / 文档全部对齐 v0.6.0
+- **验证通过**: TypeScript 构建通过、Docker 构建成功、容器启动健康
 
 ### v0.5.0 (2026-06-30)
 

@@ -1,0 +1,19 @@
+# Default code owners
+*       @symi-daguo
+
+# Source code
+/src/   @symi-daguo
+/public/ @symi-daguo
+
+# Skills
+/skills/ @symi-daguo
+
+# CI/CD and workflows
+/.github/workflows/ @symi-daguo
+
+# Documentation
+*.md    @symi-daguo
+README* @symi-daguo
+
+# Security
+SECURITY.md @symi-daguo

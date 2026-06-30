@@ -4,8 +4,8 @@ WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
 
-COPY package.json ./
-RUN npm install --legacy-peer-deps
+COPY package.json package-lock.json* ./
+RUN npm ci --legacy-peer-deps
 
 COPY src/ ./src/
 COPY public/ ./public/
@@ -38,5 +38,8 @@ RUN mkdir -p /app/data && \
 VOLUME ["/app/data"]
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 CMD ["node", "--max-old-space-size=128", "dist/server.js"]

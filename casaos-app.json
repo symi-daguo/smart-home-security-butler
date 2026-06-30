@@ -10,8 +10,8 @@
   "architectures": ["amd64", "arm64", "armv7"],
   "platform": "linux",
   "timestamp": 1719648000,
-  "version": "0.5.0",
-  "latest_version": "0.5.0",
+  "version": "0.6.0",
+  "latest_version": "0.6.0",
   "icon": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png",
   "screenshots": [],
   "apps": [

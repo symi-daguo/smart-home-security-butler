@@ -935,6 +935,18 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
   res.setHeader('Content-Type', 'application/json');
 
   try {
+    if (reqPath === '/api/health' && method === 'GET') {
+      const uptime = Math.floor((Date.now() - startTime) / 1000);
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        status: 'healthy',
+        uptime,
+        version: '0.6.0',
+        timestamp: new Date().toISOString(),
+      }));
+      return true;
+    }
+
     if (reqPath === '/api/status' && method === 'GET') {
       const uptime = Math.floor((Date.now() - startTime) / 1000);
       const states = await butler.getEntityStates();
@@ -986,7 +998,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           securityScore: score?.overall ?? 0,
           scoreDetails,
           dbSize: getDbSize(),
-          version: '0.5.0',
+          version: '0.6.0',
           collectors: collectorStatuses,
           entityMetrics,
           system: sysInfo,
@@ -1544,7 +1556,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
 async function main() {
   console.log('========================================');
-  console.log('Smart Home Security Butler v0.4.0');
+  console.log('Smart Home Security Butler v0.6.0');
   console.log('========================================');
 
   if (!fs.existsSync(DATA_DIR)) {

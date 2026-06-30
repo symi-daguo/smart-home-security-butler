@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/symi-daguo/smart-home-security-butler#readme
+    about: Check the documentation for answers
+  - name: Community Discussion
+    url: https://github.com/symi-daguo/smart-home-security-butler/discussions
+    about: Ask questions and share ideas

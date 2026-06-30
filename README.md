@@ -21,9 +21,22 @@ Both projects provide Agent Skill packages. AI agents can load both to achieve a
 
 ## Version
 
-0.5.0
+0.6.0
 
 ## Changelog
+
+### v0.6.0 (2026-06-30)
+
+- **GitHub repository best practices**: Complete CI/CD pipeline with GitHub Actions, CodeQL security scanning, Dependabot dependency updates
+- **Issue & PR templates**: Standardized bug report, feature request, and pull request templates for consistent contribution
+- **Repository governance**: CODEOWNERS, SECURITY.md, CODE_OF_CONDUCT.md, CONTRIBUTING.md for professional project management
+- **Health check endpoint**: New `/api/health` endpoint for Docker health checks and monitoring
+- **Docker healthcheck**: Built-in HEALTHCHECK instruction in Dockerfile for container orchestration
+- **Tech stack upgrade**: better-sqlite3 12.x, axios 1.18.x, TypeScript target ES2023
+- **TypeScript strictness**: Added noImplicitReturns and noFallthroughCasesInSwitch for safer code
+- **CI matrix testing**: Tests run on Node.js 20.x and 22.x for compatibility verification
+- **Version alignment**: package.json / server.ts / Docker / docs all at v0.6.0
+- **Verified**: TypeScript build passes, Docker build succeeds, container starts healthy
 
 ### v0.5.0 (2026-06-30)
 

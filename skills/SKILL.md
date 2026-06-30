@@ -10,7 +10,7 @@ description: >-
   monitoring home security, analyzing security events, configuring detection rules,
   setting up alert notifications, generating automation recommendations, viewing
   security trends and scores, or producing security reports.
-version: 0.5.0
+version: 0.6.0
 compatibility: >-
   Requires network access to Home Assistant, Node-RED, and/or KNX Gateway instances
   on a trusted LAN or VPN. Supports HA 2024.1+, Node-RED 3.1+, and KNX Gateway 1.0+.

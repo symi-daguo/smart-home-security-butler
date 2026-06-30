@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 APP_NAME="smart-home-butler"
 
 COLOR_GREEN="\033[0;32m"
