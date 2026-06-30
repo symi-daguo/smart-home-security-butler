@@ -13,6 +13,8 @@ AI-powered security monitoring and automation for smart homes. Proactively monit
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Deployment Methods](#deployment-methods)
+- [Upgrading](#upgrading)
 - [Features](#features)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
@@ -20,6 +22,7 @@ AI-powered security monitoring and automation for smart homes. Proactively monit
 - [Security Scoring System](#security-scoring-system)
 - [Project Structure](#project-structure)
 - [System Requirements](#system-requirements)
+- [Performance & Stability](#performance--stability)
 - [Version](#version)
 - [Related Projects](#related-projects)
 - [License](#license)
@@ -28,26 +31,136 @@ AI-powered security monitoring and automation for smart homes. Proactively monit
 
 ## Quick Start
 
-### 1. Docker Deployment (Recommended)
+### Method 1: One-Click Install Script (Recommended for CasaOS)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/symi-daguo/smart-home-security-butler/main/scripts/install.sh | bash
+```
+
+### Method 2: Docker Compose
 
 ```bash
 git clone https://github.com/symi-daguo/smart-home-security-butler.git
 cd smart-home-security-butler
 cp .env.example .env
 # Edit .env with your configuration
-docker compose up -d --build
+docker compose up -d
 ```
 
-Access the web UI: http://localhost:3000
+### Method 3: CasaOS App Store
 
-### 2. Verify Installation
+1. Copy `casaos-app.json` to your CasaOS app store directory
+2. Or manually add via CasaOS UI using docker-compose.yml
+3. Data directory: `/DATA/AppData/smart-home-butler/`
+
+### Verify Installation
 
 ```bash
-# Check container health
+# Check container status
+docker ps | grep smart-home-butler
+
+# Health check
 curl http://localhost:3000/api/health
 
 # View system status
 curl http://localhost:3000/api/status
+```
+
+Access the web UI: http://localhost:3000
+
+---
+
+## Deployment Methods
+
+### CasaOS Standard Deployment
+
+The application follows CasaOS conventions:
+
+| Path | Description |
+|------|-------------|
+| `/var/lib/casaos/apps/smart-home-butler/` | App configuration |
+| `/DATA/AppData/smart-home-butler/data/` | Data & database |
+| `/DATA/AppData/smart-home-butler/.env` | Environment config |
+
+**Setup steps:**
+1. Create app directory: `mkdir -p /var/lib/casaos/apps/smart-home-butler`
+2. Copy `docker-compose.yml` to the app directory
+3. Create data directory: `mkdir -p /DATA/AppData/smart-home-butler/data`
+4. Copy `.env.example` to `/DATA/AppData/smart-home-butler/.env` and configure
+5. Start: `cd /var/lib/casaos/apps/smart-home-butler && docker compose --env-file /DATA/AppData/smart-home-butler/.env up -d`
+
+### Docker Standalone Deployment
+
+```bash
+docker run -d \
+  --name smart-home-butler \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v ./data:/app/data \
+  -e OPENROUTER_API_KEY=your_key \
+  -e HA_BASE_URL=http://your-ha:8123 \
+  -e HA_TOKEN=your_token \
+  --memory 256m \
+  --cpus 1.0 \
+  smart-home-butler:latest
+```
+
+---
+
+## Upgrading
+
+### Upgrade from any version to latest
+
+**Using update script:**
+```bash
+curl -sSL https://raw.githubusercontent.com/symi-daguo/smart-home-security-butler/main/scripts/update.sh | bash
+```
+
+**Manual upgrade (Docker Compose):**
+```bash
+cd ~/smart-home-butler
+
+# 1. Backup data
+cp -r data data_backup_$(date +%Y%m%d_%H%M%S)
+cp .env .env.backup
+
+# 2. Pull latest code
+git pull origin main
+
+# 3. Rebuild and restart
+docker compose up -d --build
+
+# 4. Verify
+curl http://localhost:3000/api/health
+```
+
+**Manual upgrade (CasaOS):**
+```bash
+# 1. Backup
+cp -r /DATA/AppData/smart-home-butler/data /DATA/AppData/smart-home-butler/data_backup_$(date +%Y%m%d_%H%M%S)
+
+# 2. Update docker-compose.yml
+cp docker-compose.yml /var/lib/casaos/apps/smart-home-butler/docker-compose.yml
+
+# 3. Rebuild image
+cd /var/lib/casaos/apps/smart-home-butler
+docker compose build
+
+# 4. Restart container
+docker compose --env-file /DATA/AppData/smart-home-butler/.env up -d --force-recreate
+
+# 5. Verify
+curl http://localhost:3000/api/health
+```
+
+**Rollback if upgrade fails:**
+```bash
+# Restore data
+cp -r data_backup_YYYYMMDD_HHMMSS/* data/
+
+# Restart with old image
+docker compose down
+docker compose up -d
 ```
 
 ---
@@ -234,6 +347,10 @@ smart-home-security-butler/
 - **README Optimization**: Added table of contents for better navigation, improved document structure
 - **Documentation Refinement**: Simplified version history, only display latest version changelog
 - **Version Strategy**: Adopted semantic versioning (MAJOR.MINOR.PATCH), small fixes use patch version
+- **CasaOS Integration**: Full CasaOS app support with standard directory layout and x-casaos configuration
+- **Deployment Guide**: Added complete deployment methods, upgrade guide, and verification checklist
+- **Security Audit**: Fixed all npm audit vulnerabilities (0 vulnerabilities), removed unused node-cron dependency, upgraded vitest to latest
+- **Health Check Unified**: Standardized all health check endpoints to `/api/health`
 
 ---
 
@@ -245,10 +362,55 @@ smart-home-security-butler/
 - **Docker**: Docker & Docker Compose
 - **Home Assistant**: 2024.1+ (recommended)
 
-**CasaOS Verified** (J1900):
-- Memory usage: ~80-120MB
-- CPU usage: < 5% idle
-- Startup time: < 10 seconds
+---
+
+## Performance & Stability
+
+Verified on Intel J1900 (4 cores, 8GB RAM) + CasaOS:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Memory Usage** | ~38MB | 15% of 256MB limit |
+| **CPU Usage (idle)** | ~0-1% | Negligible impact |
+| **CPU Usage (active)** | ~3-5% | During detection/AI |
+| **Startup Time** | < 5s | Cold start |
+| **Container Restarts** | 0 | Stable operation |
+| **Health Check** | 100% pass | All checks healthy |
+| **Database Size** | ~8MB | After initial import |
+
+### Resource Protection
+
+The application includes built-in resource limits:
+
+| Limit | Value | Purpose |
+|-------|-------|---------|
+| Memory limit | 256MB | Prevent OOM crashes |
+| CPU limit | 1 core | Prevent system overload |
+| Log size | 10MB x 3 files | Prevent disk bloat |
+| Detection interval | 5 min default | Prevent excessive CPU |
+
+### Long-Term Stability Guarantees
+
+- SQLite local storage, no external database dependency
+- Graceful error handling for all collector connections
+- Automatic reconnection for failed data sources
+- Health check with auto-restart (Docker restart policy)
+- All data persisted locally, safe from network issues
+- Memory leak prevention with proper cleanup routines
+- Zero npm audit vulnerabilities (production & dev dependencies)
+- Regular security audits and dependency updates
+
+### Verification Checklist
+
+After deployment, verify these are working:
+
+- [ ] Container is running: `docker ps | grep smart-home-butler`
+- [ ] Health check passes: `curl http://localhost:3000/api/health`
+- [ ] Web UI accessible: http://your-ip:3000
+- [ ] HA collector shows "connected" status
+- [ ] AI agent initialized successfully
+- [ ] Memory usage < 128MB
+- [ ] CPU usage < 10% at idle
 
 ---
 

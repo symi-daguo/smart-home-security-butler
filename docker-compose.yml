@@ -65,8 +65,28 @@ x-casaos:
     en_us: AI security butler for CasaOS smart home
     zh_cn: CasaOS 本地 AI 智能家居安全管家
   description:
-    en_us: Monitor HA, Node-RED, KNX gateways with local AI analysis
-    zh_cn: 采集 Home Assistant、Node-RED、KNX 网关真实数据，本地 AI 智能分析
+    en_us: |
+      Smart Home AI Security Butler - Proactive security monitoring and automation for Home Assistant, Node-RED, and KNX Gateways.
+
+      **Key Features:**
+      - Security scoring system with real-time assessment
+      - Multi-source data collection (HA, Node-RED, KNX)
+      - AI-powered smart detection (away mode, device faults, door access, energy)
+      - Natural language AI assistant for status queries and automation
+      - Multi-channel notifications (Telegram, Bark, ServerChan)
+      - Web management dashboard
+      - Local SQLite data persistence
+    zh_cn: |
+      智能家居 AI 安全管家 - 基于 AI 的智能家居安全监控与自动化助手，集成 Home Assistant、Node-RED、KNX 网关等多种数据源，自动检测安全隐患并及时通知。
+
+      **核心功能：**
+      - 安全评分系统，实时评估家庭安全状况
+      - 多源数据采集，支持 HA、Node-RED、KNX 网关
+      - AI 智能检测：离家模式、设备故障、门禁异常、能耗异常
+      - AI 智能助手：自然语言交互，查询状态、生成自动化
+      - 多渠道通知：Telegram、Bark、Server酱
+      - Web 管理后台，可视化界面
+      - SQLite 本地持久化存储，数据不丢失
   icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png
   category: Smart Home
   developer: symi-daguo

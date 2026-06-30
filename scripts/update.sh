@@ -133,7 +133,7 @@ verify_health() {
     log_info "正在验证服务健康状态..."
     
     for i in {1..10}; do
-        if curl -s http://localhost:3000/api/status | grep -q '"success":true'; then
+        if curl -s http://localhost:3000/api/health | grep -q '"status":"healthy"'; then
             log_success "服务运行正常"
             return 0
         fi
