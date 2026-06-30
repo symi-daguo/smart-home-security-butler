@@ -1,0 +1,182 @@
+{
+  "name": "Smart Home Security Butler",
+  "description": "智能家居 AI 安全管家 - 基于 AI 的智能家居安全监控与自动化助手",
+  "long_description": "# 智能家居 AI 安全管家\n\n一款基于 AI 的智能家居安全监控与自动化助手，集成 Home Assistant、Node-RED、KNX 网关等多种数据源，自动检测安全隐患并及时通知。\n\n## 主要功能\n\n- **安全评分系统**: 实时评估家庭安全状况，给出综合评分\n- **多源数据采集**: 支持 Home Assistant、Node-RED、KNX 网关\n- **智能安全检测**: 离家模式异常、设备故障、门禁异常、能耗异常\n- **AI 智能助手**: 自然语言交互，查询状态、生成自动化\n- **自动化生成**: 一句话描述自动生成 HA 自动化配置\n- **多渠道通知**: Telegram、微信等多种告警方式\n- **可视化界面**: 简洁易用的 Web 管理后台\n- **数据持久化**: SQLite 本地存储，记忆不丢失\n\n## 系统要求\n\n- 内存: 最低 128MB，推荐 256MB\n- CPU: 1 核心以上\n- 存储: 500MB 以上\n\n## 配置说明\n\n安装后请在设置中配置以下信息：\n\n1. **OpenRouter API Key** (必填) - 大语言模型 API\n2. **Home Assistant 地址和 Token** (推荐) - 智能家居数据来源\n3. **Telegram Bot Token** (可选) - 告警通知渠道\n\n访问 Web 界面: http://你的IP:3000",
+  "tip_before_install": "安装前请确保你有 OpenRouter API Key。注册地址: https://openrouter.ai",
+  "categories": ["AI", "智能家居", "安全", "工具"],
+  "official_document": "",
+  "official_web": "",
+  "github": "",
+  "architectures": ["amd64", "arm64", "armv7"],
+  "platform": "linux",
+  "timestamp": 1719648000,
+  "version": "0.5.0",
+  "latest_version": "0.5.0",
+  "icon": "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png",
+  "screenshots": [],
+  "apps": [
+    {
+      "name": "smart-home-butler",
+      "image": "registry.cn-hangzhou.aliyuncs.com/symi/smart-home-butler:latest",
+      "restart": "unless-stopped",
+      "ports": [
+        {
+          "container": "3000",
+          "host": "3000",
+          "desc": "Web 管理界面端口",
+          "type": "tcp"
+        }
+      ],
+      "volumes": [
+        {
+          "container": "/app/data",
+          "host": "/DATA/AppData/smart-home-butler/data",
+          "desc": "数据存储目录",
+          "type": "rw"
+        }
+      ],
+      "env": [
+        {
+          "key": "TZ",
+          "value": "Asia/Shanghai",
+          "desc": "时区"
+        },
+        {
+          "key": "NODE_ENV",
+          "value": "production",
+          "desc": "运行环境"
+        },
+        {
+          "key": "DATA_DIR",
+          "value": "/app/data",
+          "desc": "数据存储目录"
+        },
+        {
+          "key": "PORT",
+          "value": "3000",
+          "desc": "服务端口"
+        },
+        {
+          "key": "OPENROUTER_API_KEY",
+          "value": "",
+          "desc": "OpenRouter API Key（必填）",
+          "type": 2
+        },
+        {
+          "key": "OPENROUTER_MODEL",
+          "value": "nvidia/nemotron-3-super-120b-a12b:free",
+          "desc": "主模型（推荐免费模型）"
+        },
+        {
+          "key": "OPENROUTER_FALLBACK_MODEL",
+          "value": "openrouter/free",
+          "desc": "备用模型"
+        },
+        {
+          "key": "HA_BASE_URL",
+          "value": "http://172.17.0.1:8123",
+          "desc": "Home Assistant 地址"
+        },
+        {
+          "key": "HA_TOKEN",
+          "value": "",
+          "desc": "Home Assistant 长期访问令牌",
+          "type": 2
+        },
+        {
+          "key": "NODERED_BASE_URL",
+          "value": "http://172.17.0.1:1880",
+          "desc": "Node-RED 地址（可选）"
+        },
+        {
+          "key": "NODERED_TOKEN",
+          "value": "",
+          "desc": "Node-RED Token（可选）",
+          "type": 2
+        },
+        {
+          "key": "KNX_BASE_URL",
+          "value": "",
+          "desc": "KNX 网关 1 地址（可选）"
+        },
+        {
+          "key": "KNX_TOKEN",
+          "value": "",
+          "desc": "KNX 网关 1 Token（可选）",
+          "type": 2
+        },
+        {
+          "key": "KNX2_BASE_URL",
+          "value": "",
+          "desc": "KNX 网关 2 地址（可选）"
+        },
+        {
+          "key": "KNX2_TOKEN",
+          "value": "",
+          "desc": "KNX 网关 2 Token（可选）",
+          "type": 2
+        },
+        {
+          "key": "TELEGRAM_BOT_TOKEN",
+          "value": "",
+          "desc": "Telegram Bot Token（可选）",
+          "type": 2
+        },
+        {
+          "key": "TELEGRAM_CHAT_ID",
+          "value": "",
+          "desc": "Telegram 聊天 ID（可选）"
+        },
+        {
+          "key": "BARK_DEVICE_KEY",
+          "value": "",
+          "desc": "Bark 设备 Key（可选）",
+          "type": 2
+        },
+        {
+          "key": "BARK_BASE_URL",
+          "value": "https://api.day.app",
+          "desc": "Bark 服务器地址（可选）"
+        },
+        {
+          "key": "SERVERCHAN_SEND_KEY",
+          "value": "",
+          "desc": "Server酱 SendKey（可选）",
+          "type": 2
+        },
+        {
+          "key": "DETECTION_INTERVAL",
+          "value": "300000",
+          "desc": "检测间隔（毫秒，默认5分钟）"
+        },
+        {
+          "key": "LOG_LEVEL",
+          "value": "info",
+          "desc": "日志级别"
+        }
+      ],
+      "devices": [],
+      "cap_add": [],
+      "sysctls": [],
+      "privileged": false,
+      "networking": {
+        "mode": "bridge"
+      },
+      "resources": {
+        "mem_limit": "256m",
+        "cpus": 1
+      },
+      "healthcheck": {
+        "test": ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/status"],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3,
+        "start_period": "30s"
+      }
+    }
+  ],
+  "store_user_releases": {
+    "owner": "symi-daguo",
+    "repo": "smart-home-security-butler"
+  }
+}

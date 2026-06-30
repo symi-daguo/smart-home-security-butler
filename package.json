@@ -1,0 +1,50 @@
+{
+  "name": "smart-home-security-butler",
+  "version": "0.5.0",
+  "description": "Smart Home AI Security Butler - Proactive security monitoring and automation for Home Assistant, Node-RED, and KNX Gateways",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "home-assistant",
+    "home-automation",
+    "security",
+    "knx",
+    "node-red",
+    "smart-home",
+    "ai-agent",
+    "skills"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "ws": "^8.18.0",
+    "axios": "^1.7.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.10",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0",
+    "eslint": "^9.10.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "prettier": "^3.4.0"
+  }
+}

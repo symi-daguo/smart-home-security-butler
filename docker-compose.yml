@@ -1,0 +1,73 @@
+services:
+  smart-home-butler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-home-butler:latest
+    container_name: smart-home-butler
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - NODE_ENV=${NODE_ENV:-production}
+      - DATA_DIR=${DATA_DIR:-/app/data}
+      - PORT=${PORT:-3000}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
+      - OPENROUTER_FALLBACK_MODEL=${OPENROUTER_FALLBACK_MODEL:-openrouter/free}
+      - HA_BASE_URL=${HA_BASE_URL:-http://172.17.0.1:8123}
+      - HA_TOKEN=${HA_TOKEN}
+      - NODERED_BASE_URL=${NODERED_BASE_URL:-http://172.17.0.1:1880}
+      - NODERED_TOKEN=${NODERED_TOKEN}
+      - KNX_BASE_URL=${KNX_BASE_URL}
+      - KNX_TOKEN=${KNX_TOKEN}
+      - KNX2_BASE_URL=${KNX2_BASE_URL}
+      - KNX2_TOKEN=${KNX2_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - BARK_DEVICE_KEY=${BARK_DEVICE_KEY}
+      - BARK_BASE_URL=${BARK_BASE_URL:-https://api.day.app}
+      - SERVERCHAN_SEND_KEY=${SERVERCHAN_SEND_KEY}
+      - DETECTION_INTERVAL=${DETECTION_INTERVAL:-300000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "${PORT:-3000}:3000"
+    network_mode: bridge
+    mem_limit: 256m
+    cpus: '1.0'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: smart-home-butler
+  index: /
+  port_map: "3000"
+  scheme: http
+  title:
+    en_us: Smart Home Security Butler
+    zh_cn: 智能家居 AI 安全管家
+  tagline:
+    en_us: AI security butler for CasaOS smart home
+    zh_cn: CasaOS 本地 AI 智能家居安全管家
+  description:
+    en_us: Monitor HA, Node-RED, KNX gateways with local AI analysis
+    zh_cn: 采集 Home Assistant、Node-RED、KNX 网关真实数据，本地 AI 智能分析
+  icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png
+  category: Smart Home
+  developer: symi-daguo
+  version: 0.5.0
