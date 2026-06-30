@@ -517,7 +517,7 @@ export class SecurityButler extends EventEmitter {
 
     const typeCounts: Record<string, number> = {};
     const sourceCounts: Record<string, number> = {};
-    const onlineCount = 0;
+    let onlineCount = 0;
     const rooms = new Set<string>();
 
     for (const state of states) {
@@ -526,6 +526,11 @@ export class SecurityButler extends EventEmitter {
 
       const src = state.source || 'unknown';
       sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+
+      const stateLower = String(state.state || '').toLowerCase();
+      if (stateLower !== 'unavailable' && stateLower !== 'unknown' && stateLower !== 'offline') {
+        onlineCount++;
+      }
 
       if (state.attributes?.roomName) {
         rooms.add(state.attributes.roomName);
@@ -538,6 +543,7 @@ export class SecurityButler extends EventEmitter {
     const summary = [
       `系统状态更新时间: ${new Date().toISOString()}`,
       `设备总数: ${deviceCount}台`,
+      `在线设备: ${onlineCount}台`,
       `数据源: ${Object.entries(sourceCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`,
       `设备类型分布: ${Object.entries(typeCounts).slice(0, 8).map(([k, v]) => `${k}=${v}`).join(', ')}`,
       `房间数: ${rooms.size}个`,
@@ -1051,7 +1057,7 @@ export class SecurityButler extends EventEmitter {
 
     return {
       status: overallStatus as SystemStatus['status'],
-      version: '0.0.1',
+      version: '0.6.1',
       uptime: this.getUptime(),
       components: {
         collectors: {
