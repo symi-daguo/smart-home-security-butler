@@ -580,9 +580,7 @@ function navigateTo(page) {
   if (page === 'knx') loadKnxStudioPage();
   if (page === 'diagnostics') loadDiagnostics();
 
-  if (page !== 'knx') {
-    history.replaceState(null, '', '#/' + page);
-  }
+  history.replaceState(null, '', page === 'knx' ? '#/knx' : `#/${page}`);
 }
 
 /* ============================================================
