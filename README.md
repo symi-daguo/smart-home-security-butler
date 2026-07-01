@@ -24,6 +24,7 @@ AI-powered security monitoring and automation for smart homes. Proactively monit
 - [System Requirements](#system-requirements)
 - [Performance & Stability](#performance--stability)
 - [Version](#version)
+- [SYMI Fusion Docs](#symi-fusion-docs)
 - [Related Projects](#related-projects)
 - [License](#license)
 
@@ -194,6 +195,11 @@ docker compose up -d
 | `NODERED_TOKEN` | No | Node-RED token | - |
 | `KNX_BASE_URL` | No | KNX Gateway URL | - |
 | `KNX_TOKEN` | No | KNX Gateway token | - |
+| `KNXD_ENV_PATH` | Recommended | knxd env path in container | `/knxd-gateway/.env` |
+| `KNXD_HOST` | Recommended | knxd host from butler container | `172.17.0.1` |
+| `KNXD_PORT` | Recommended | knxd KNXnet/IP port | `3671` |
+| `KNXD_CONTAINER_NAME` | Recommended | knxd container name | `rs232-knx-knxd` |
+| `DOCKER_SOCKET_PATH` | Optional | Docker socket for logs/ops | `/var/run/docker.sock` |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token | - |
 | `TELEGRAM_CHAT_ID` | No | Telegram chat ID | - |
 | `BARK_DEVICE_KEY` | No | Bark device key | - |
@@ -248,6 +254,7 @@ docker compose up -d
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/chat` | POST | Chat with AI assistant |
+| `/api/ai/confirm` | POST | Confirm pending write action |
 | `/api/chat/sessions` | GET | List chat sessions |
 | `/api/chat/sessions/:id/messages` | GET | Session messages |
 | `/api/chat/clear` | POST | Clear chat history |
@@ -268,6 +275,10 @@ docker compose up -d
 | `/api/collectors` | GET | List data collectors |
 | `/api/collectors/test` | POST | Test collector connection |
 | `/api/notifications/test` | POST | Test notification channel |
+| `/api/casaos/containers` | GET | List managed CasaOS containers |
+| `/api/casaos/containers/:name/restart` | POST | Restart a managed container |
+| `/api/system/backup` | GET | Download settings/database backup zip |
+| `/api/system/restore` | POST | Restore from uploaded backup zip |
 
 ---
 
@@ -338,7 +349,17 @@ smart-home-security-butler/
 
 ## Version
 
-**Current Version**: 0.6.1
+**Current Version**: 0.7.0
+
+### v0.7.0 (2026-07-01)
+
+- Added Phase 3 AI alignment: `list_scenes`, `activate_scene`, `get_knxd_status`
+- Added write confirmation flow (`pendingAction` + `/api/ai/confirm`)
+- Added maintenance mode switch for direct write execution
+- Added local intent routing for common queries (score/device/scenes/knxd)
+- Added CasaOS operations card APIs (`/api/casaos/containers`, restart endpoint)
+- Added backup/restore APIs for SQLite + settings + knxd env
+- Added archived SYMI Fusion docs under local `docs/` for single-repo maintenance
 
 ### v0.6.1 (2026-06-30)
 
@@ -411,6 +432,16 @@ After deployment, verify these are working:
 - [ ] AI agent initialized successfully
 - [ ] Memory usage < 128MB
 - [ ] CPU usage < 10% at idle
+
+---
+
+## SYMI Fusion Docs
+
+- [SYMI Fusion Development Plan (zh-CN)](docs/SYMI-Fusion-Development-Plan.zh-CN.md)
+- [symi-smarthome Skill Alignment](docs/skills/symi-smarthome-SKILL.md)
+
+These docs are now maintained in this repository to keep deployment, verification,
+and development guidance in one place.
 
 ---
 

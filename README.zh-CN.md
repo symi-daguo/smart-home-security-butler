@@ -24,6 +24,7 @@
 - [系统要求](#系统要求)
 - [性能与稳定性](#性能与稳定性)
 - [版本信息](#版本信息)
+- [SYMI Fusion 文档](#symi-fusion-文档)
 - [相关项目](#相关项目)
 - [许可证](#许可证)
 
@@ -194,6 +195,11 @@ docker compose up -d
 | `NODERED_TOKEN` | 否 | Node-RED 令牌 | - |
 | `KNX_BASE_URL` | 否 | KNX 网关地址 | - |
 | `KNX_TOKEN` | 否 | KNX 网关令牌 | - |
+| `KNXD_ENV_PATH` | 推荐 | 容器内 knxd 配置路径 | `/knxd-gateway/.env` |
+| `KNXD_HOST` | 推荐 | Butler 容器访问 knxd 地址 | `172.17.0.1` |
+| `KNXD_PORT` | 推荐 | knxd KNXnet/IP 端口 | `3671` |
+| `KNXD_CONTAINER_NAME` | 推荐 | knxd 容器名称 | `rs232-knx-knxd` |
+| `DOCKER_SOCKET_PATH` | 可选 | Docker socket 路径（日志/运维） | `/var/run/docker.sock` |
 | `TELEGRAM_BOT_TOKEN` | 否 | Telegram 机器人令牌 | - |
 | `TELEGRAM_CHAT_ID` | 否 | Telegram 聊天 ID | - |
 | `BARK_DEVICE_KEY` | 否 | Bark 设备密钥 | - |
@@ -265,6 +271,7 @@ docker compose up -d
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/chat` | POST | 与 AI 助手对话 |
+| `/api/ai/confirm` | POST | 确认待执行写操作 |
 | `/api/chat/sessions` | GET | 对话会话列表 |
 | `/api/chat/sessions/:id/messages` | GET | 会话历史消息 |
 | `/api/chat/clear` | POST | 清空对话历史 |
@@ -285,6 +292,10 @@ docker compose up -d
 | `/api/collectors` | GET | 数据采集器列表 |
 | `/api/collectors/test` | POST | 测试采集器连接 |
 | `/api/notifications/test` | POST | 测试通知渠道 |
+| `/api/casaos/containers` | GET | CasaOS 受管容器列表 |
+| `/api/casaos/containers/:name/restart` | POST | 重启指定受管容器 |
+| `/api/system/backup` | GET | 下载配置与数据库备份 |
+| `/api/system/restore` | POST | 从备份包还原配置与数据库 |
 
 ---
 
@@ -355,7 +366,17 @@ smart-home-security-butler/
 
 ## 版本信息
 
-**当前版本**：0.6.1
+**当前版本**：0.7.0
+
+### v0.7.0 (2026-07-01)
+
+- 新增 Phase 3 AI 对齐工具：`list_scenes`、`activate_scene`、`get_knxd_status`
+- 新增写操作确认流：`pendingAction` + `/api/ai/confirm`
+- 新增维护模式开关，支持写操作直接执行
+- 新增常见问题本地路由（评分/设备/场景/knxd）
+- 新增 CasaOS 运维 API（容器列表与重启）
+- 新增备份还原 API（SQLite + settings + knxd env）
+- 新增 `docs/` 归档文档，统一在本仓维护 SYMI Fusion 方案
 
 ### v0.6.1 (2026-06-30)
 
@@ -428,6 +449,15 @@ Intel J1900（4核8GB）+ CasaOS 实测数据：
 - [ ] AI 智能体初始化成功
 - [ ] 内存占用 < 128MB
 - [ ] 空闲时 CPU 占用 < 10%
+
+---
+
+## SYMI Fusion 文档
+
+- [SYMI Fusion 开发方案（中文）](docs/SYMI-Fusion-Development-Plan.zh-CN.md)
+- [symi-smarthome 技能对齐说明](docs/skills/symi-smarthome-SKILL.md)
+
+后续以本仓文档为准，避免多仓文档漂移。
 
 ---
 
