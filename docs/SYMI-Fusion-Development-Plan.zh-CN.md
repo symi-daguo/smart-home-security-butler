@@ -3,7 +3,7 @@
 > 版本：v1.2  
 > 日期：2026-07-01  
 > 状态：Phase 1-4（核心项）已完成，Tasmota 融合为可选后续  
-> 代码主仓：`codebase-memory-mcp/smart-home-security-butler`  
+> 代码主仓：`smart-home-security-butler`  
 > 说明：本文件为原 OpenKNX 侧方案的 Butler 仓归档版本，后续以本仓为唯一维护入口。
 
 ---
@@ -54,6 +54,17 @@
 - CasaOS 运维卡片：容器列表与重启能力。
 - 配置备份/还原：SQLite + settings + knxd `.env`。
 - Tasmota-ModbusKNX 融合保留为可选后续项。
+
+## Phase 4.1（2026-07-01 验证修正）
+- 修复 AI 对“重启容器”请求未进入确认流的问题：
+  - 新增 AI 工具：`list_containers`、`restart_container`
+  - `restart_container` 纳入写操作确认流（`pendingAction` + `/api/ai/confirm`）
+  - 增加本地意图兜底：解析“重启 xxx 容器”并强制走确认流程
+- 联机与本地回归结果：
+  - `npm test`、`npm run build` 通过
+  - `agent-browser` 验证 AI 助手页面出现“确认执行：重启容器 ...”按钮
+  - `GET /api/system/backup` 解包包含 `security-butler.db`、`settings.json`、`knx-gateway.env`、`knx-projects/*.knxproj`
+  - CasaOS `192.168.2.65` 关键容器在线：`smart-home-butler`、`rs232-knx-knxd`
 
 ---
 

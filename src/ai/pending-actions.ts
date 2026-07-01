@@ -54,6 +54,7 @@ export const WRITE_TOOLS = new Set([
   'activate_scene',
   'acknowledge_alert',
   'close_alert',
+  'restart_container',
 ]);
 
 export function isWriteTool(toolName: string): boolean {
@@ -70,6 +71,8 @@ export function summarizeWriteAction(toolName: string, args: Record<string, unkn
       return `确认告警 ${args.alert_id}`;
     case 'close_alert':
       return `关闭告警 ${args.alert_id}`;
+    case 'restart_container':
+      return `重启容器 ${args.container_name}`;
     default:
       return `执行写操作 ${toolName}`;
   }

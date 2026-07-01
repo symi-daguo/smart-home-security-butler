@@ -24,6 +24,8 @@ export interface ToolHandlerContext {
   listScenes: () => Promise<any>;
   activateScene: (sceneIdOrName: string) => Promise<any>;
   getKnxdStatus: () => Promise<any>;
+  listContainers: () => Promise<any>;
+  restartContainer: (containerName: string) => Promise<any>;
   getWritePolicy: () => WritePolicy;
 }
 
@@ -42,6 +44,35 @@ export const toolDefinitions: ToolDefinition[] = [
           },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_containers',
+      description: '列出 CasaOS 运维白名单中的容器状态（运行中、镜像、容器名）。',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'restart_container',
+      description: '重启一个 CasaOS 白名单容器。这是写操作，非维护模式下需要用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          container_name: {
+            type: 'string',
+            description: '容器名称，例如 "smart-home-butler" 或 "rs232-knx-knxd"',
+          },
+        },
+        required: ['container_name'],
       },
     },
   },
@@ -342,6 +373,14 @@ export async function executeTool(
 
       case 'get_knxd_status':
         result = await context.getKnxdStatus();
+        break;
+
+      case 'list_containers':
+        result = await context.listContainers();
+        break;
+
+      case 'restart_container':
+        result = await context.restartContainer(args.container_name);
         break;
 
       case 'generate_automation':

@@ -25,6 +25,7 @@ import { ToolHandlerContext, executeTool } from './ai/tools';
 import { tryLocalChatRoute } from './ai/router';
 import { pendingActionStore } from './ai/pending-actions';
 import { getKnxdHealthStatus } from './knx/knxd-env';
+import { listManagedContainers, restartContainer } from './casaos/docker-control';
 import {
   SystemStatus,
   CollectorConfig,
@@ -239,6 +240,12 @@ export class SecurityButler extends EventEmitter {
           healthy: health.portOpen && health.containerStatus !== 'stopped',
         };
       },
+      listContainers: async () => {
+        return listManagedContainers();
+      },
+      restartContainer: async (containerName: string) => {
+        return restartContainer(containerName);
+      },
       getWritePolicy: () => ({
         maintenanceMode: this.maintenanceMode,
       }),
@@ -260,6 +267,34 @@ export class SecurityButler extends EventEmitter {
     route?: string;
     pendingAction?: { actionId: string; summary: string };
   }> {
+    const restartContainerIntent = this.parseRestartContainerIntent(message);
+    if (restartContainerIntent) {
+      if (this.maintenanceMode) {
+        const result = await restartContainer(restartContainerIntent);
+        return {
+          reply: result.success
+            ? `维护模式已开启，已执行：重启容器 ${restartContainerIntent}`
+            : `维护模式已开启，但重启失败：${result.message}`,
+          route: 'restart_container_direct',
+        };
+      }
+      const action = pendingActionStore.create({
+        toolName: 'restart_container',
+        args: { container_name: restartContainerIntent },
+        summary: `重启容器 ${restartContainerIntent}`,
+      });
+      return {
+        reply:
+          `即将执行写操作：**重启容器 ${restartContainerIntent}**。\n\n` +
+          '请在聊天窗口点击「确认执行」，或在系统设置中开启**维护模式**后重试。',
+        route: 'restart_container_confirm',
+        pendingAction: {
+          actionId: action.id,
+          summary: action.summary,
+        },
+      };
+    }
+
     const local = await tryLocalChatRoute(message, this);
     if (local) {
       return { reply: local.reply, route: local.route };
@@ -278,6 +313,21 @@ export class SecurityButler extends EventEmitter {
       console.error('[AI] Chat error:', error);
       throw error;
     }
+  }
+
+  private parseRestartContainerIntent(message: string): string | null {
+    const text = message.trim();
+    if (!/重启/.test(text) || !/容器|container/i.test(text)) {
+      return null;
+    }
+
+    const nameMatch =
+      text.match(/重启(?:容器)?\s*([a-z0-9][a-z0-9._-]{1,80})/i) ||
+      text.match(/([a-z0-9][a-z0-9._-]{1,80})\s*容器.*重启/i);
+    if (!nameMatch) {
+      return null;
+    }
+    return nameMatch[1];
   }
 
   public async confirmWriteAction(actionId: string): Promise<{

@@ -27,11 +27,19 @@
 
 部署后至少验证以下接口：
 
-- `GET /api/health`：版本与健康状态正常
+- `GET /api/status`：版本、采集器连接数、系统状态正常
 - `GET /api/knxd/status`：`portOpen=true` 且容器状态非 stopped
 - `GET /api/knxd/config`：返回 `envPath=/knxd-gateway/.env`
 - `GET /api/casaos/containers`：可读容器状态（依赖 docker.sock）
 - `GET /api/knxd/logs`：可读 knxd 日志
+- `GET /api/system/backup`：备份包包含 `security-butler.db`、`settings.json`、`knx-gateway.env`
+
+## 4.1 AI 写操作确认流（新增必检）
+
+- 在 AI 助手发送：`请重启 smart-home-butler 容器`
+- 预期返回 `pendingAction`，前端出现“确认执行”按钮
+- 点击确认后调用 `POST /api/ai/confirm`
+- 非维护模式下必须走确认流；维护模式下允许直执
 
 ## 5. 现场常见偏差
 
@@ -46,7 +54,7 @@
 
 ## 6. 推荐工作流
 
-1. 只在本仓开发：`codebase-memory-mcp/smart-home-security-butler`
+1. 只在本仓开发：`smart-home-security-butler`
 2. 本地 build + API 自测
 3. 同步到 65（rsync 或 git pull）
 4. 容器重启后按本清单验证
