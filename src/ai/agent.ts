@@ -37,6 +37,11 @@ const DEFAULT_SYSTEM_PROMPT = `你是专业的智能家居 AI 安全管家，深
 const DEFAULT_MAX_SHORT_TERM_MESSAGES = 30;
 const DEFAULT_MAX_CONTEXT_TOKENS = 4000;
 
+export interface ChatAgentResult {
+  reply: string;
+  pendingAction?: { actionId: string; summary: string };
+}
+
 export class AIAgent {
   private config: AgentConfig;
   private client: OpenRouterClient;
@@ -88,6 +93,10 @@ export class AIAgent {
     return this.initialized;
   }
 
+  public getToolContext(): ToolHandlerContext | null {
+    return this.toolContext;
+  }
+
   public async sendMessage(
     userMessage: string,
     options?: {
@@ -96,7 +105,7 @@ export class AIAgent {
       temperature?: number;
       maxTokens?: number;
     },
-  ): Promise<string> {
+  ): Promise<ChatAgentResult> {
     if (!this.initialized || !this.toolContext) {
       throw new Error('AI Agent not initialized. Call initialize() first.');
     }
@@ -135,7 +144,7 @@ export class AIAgent {
       return await this.handleToolCalls(assistantMessage.tool_calls, options);
     }
 
-    return assistantMessage.content || '';
+    return { reply: assistantMessage.content || '' };
   }
 
   private async handleToolCalls(
@@ -146,7 +155,7 @@ export class AIAgent {
       temperature?: number;
       maxTokens?: number;
     },
-  ): Promise<string> {
+  ): Promise<ChatAgentResult> {
     if (!this.toolContext) {
       throw new Error('Tool context not available');
     }
@@ -155,6 +164,29 @@ export class AIAgent {
       try {
         const args = JSON.parse(toolCall.function.arguments || '{}');
         const result = await executeTool(toolCall.function.name, args, this.toolContext);
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(result);
+        } catch {
+          parsed = null;
+        }
+
+        if (parsed?.status === 'confirmation_required') {
+          const confirmReply =
+            `即将执行写操作：**${parsed.summary}**。\n\n请在聊天窗口点击「确认执行」，或在系统设置中开启**维护模式**后直接重试。`;
+          this.addShortTermMessage({
+            role: 'assistant',
+            content: confirmReply,
+          });
+          return {
+            reply: confirmReply,
+            pendingAction: {
+              actionId: parsed.actionId,
+              summary: parsed.summary,
+            },
+          };
+        }
 
         const toolMessage: ChatMessage = {
           role: 'tool',
@@ -204,7 +236,7 @@ export class AIAgent {
       return this.handleToolCalls(assistantMessage.tool_calls, options);
     }
 
-    return assistantMessage.content || '';
+    return { reply: assistantMessage.content || '' };
   }
 
   private buildMessages(): ChatMessage[] {

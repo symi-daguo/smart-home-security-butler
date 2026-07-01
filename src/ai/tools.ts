@@ -1,4 +1,14 @@
 import { ToolDefinition } from '../types';
+import {
+  isWriteTool,
+  pendingActionStore,
+  summarizeWriteAction,
+} from './pending-actions';
+
+export interface WritePolicy {
+  maintenanceMode: boolean;
+  bypassConfirmation?: boolean;
+}
 
 export interface ToolHandlerContext {
   getDeviceStatus: (entityId?: string) => Promise<any>;
@@ -11,6 +21,10 @@ export interface ToolHandlerContext {
   generateAutomation: (description: string, platform?: string) => Promise<any>;
   getTrends: (timeRange?: string) => Promise<any>;
   generateReport: (period?: string, format?: string) => Promise<any>;
+  listScenes: () => Promise<any>;
+  activateScene: (sceneIdOrName: string) => Promise<any>;
+  getKnxdStatus: () => Promise<any>;
+  getWritePolicy: () => WritePolicy;
 }
 
 export const toolDefinitions: ToolDefinition[] = [
@@ -138,6 +152,51 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'list_scenes',
+      description: '列出当前可用的智能家居场景，包括 KNX 场景和自动化模板。',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'activate_scene',
+      description: '激活/执行一个场景。这是写操作，非维护模式下需要用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          scene_id: {
+            type: 'string',
+            description: '场景 ID',
+          },
+          scene_name: {
+            type: 'string',
+            description: '场景名称（与 scene_id 二选一）',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_knxd_status',
+      description: '查询本机 knxd KNX 网关的健康状态、端口和容器信息。',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_security_score',
       description: '获取当前家庭安全评分，包括总体评分和各维度评分。',
       parameters: {
@@ -220,8 +279,24 @@ export async function executeTool(
   name: string,
   args: Record<string, any>,
   context: ToolHandlerContext,
+  writePolicyOverride?: WritePolicy,
 ): Promise<string> {
   try {
+    const writePolicy = writePolicyOverride || context.getWritePolicy();
+    if (isWriteTool(name) && !writePolicy.bypassConfirmation && !writePolicy.maintenanceMode) {
+      const action = pendingActionStore.create({
+        toolName: name,
+        args,
+        summary: summarizeWriteAction(name, args),
+      });
+      return JSON.stringify({
+        status: 'confirmation_required',
+        actionId: action.id,
+        summary: action.summary,
+        message: '该写操作需要用户在界面确认后才会执行。请告诉用户点击确认按钮，或开启维护模式后直接执行。',
+      });
+    }
+
     let result: any;
 
     switch (name) {
@@ -255,6 +330,18 @@ export async function executeTool(
 
       case 'get_security_score':
         result = await context.getSecurityScore();
+        break;
+
+      case 'list_scenes':
+        result = await context.listScenes();
+        break;
+
+      case 'activate_scene':
+        result = await context.activateScene(args.scene_id || args.scene_name);
+        break;
+
+      case 'get_knxd_status':
+        result = await context.getKnxdStatus();
         break;
 
       case 'generate_automation':

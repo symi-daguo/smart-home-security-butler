@@ -21,7 +21,10 @@ import { AutomationGenerator } from './automation/generator';
 import { TrendAnalyzer } from './analytics/trend-analyzer';
 import { ReportGenerator } from './analytics/report-generator';
 import { AIAgent } from './ai/agent';
-import { ToolHandlerContext } from './ai/tools';
+import { ToolHandlerContext, executeTool } from './ai/tools';
+import { tryLocalChatRoute } from './ai/router';
+import { pendingActionStore } from './ai/pending-actions';
+import { getKnxdHealthStatus } from './knx/knxd-env';
 import {
   SystemStatus,
   CollectorConfig,
@@ -71,6 +74,7 @@ export class SecurityButler extends EventEmitter {
   private startTime: number;
   private detectionTimer: NodeJS.Timeout | null;
   private cleanupTimer: NodeJS.Timeout | null;
+  private maintenanceMode: boolean;
 
   constructor(configPath?: string) {
     super();
@@ -91,6 +95,15 @@ export class SecurityButler extends EventEmitter {
     this.startTime = 0;
     this.detectionTimer = null;
     this.cleanupTimer = null;
+    this.maintenanceMode = false;
+  }
+
+  public setMaintenanceMode(enabled: boolean): void {
+    this.maintenanceMode = enabled;
+  }
+
+  public isMaintenanceMode(): boolean {
+    return this.maintenanceMode;
   }
 
   public async initialize(): Promise<void> {
@@ -211,6 +224,24 @@ export class SecurityButler extends EventEmitter {
           (format as ReportFormat) || 'markdown',
         );
       },
+      listScenes: async () => {
+        return this.getScenes();
+      },
+      activateScene: async (sceneIdOrName: string) => {
+        return this.activateScene(sceneIdOrName);
+      },
+      getKnxdStatus: async () => {
+        const health = await getKnxdHealthStatus();
+        const dbConfig = await this.storage.getKnxGatewayConfig();
+        return {
+          health,
+          dbConfig,
+          healthy: health.portOpen && health.containerStatus !== 'stopped',
+        };
+      },
+      getWritePolicy: () => ({
+        maintenanceMode: this.maintenanceMode,
+      }),
     };
 
     await this.aiAgent.initialize(toolContext);
@@ -224,7 +255,16 @@ export class SecurityButler extends EventEmitter {
       temperature?: number;
       maxTokens?: number;
     },
-  ): Promise<string> {
+  ): Promise<{
+    reply: string;
+    route?: string;
+    pendingAction?: { actionId: string; summary: string };
+  }> {
+    const local = await tryLocalChatRoute(message, this);
+    if (local) {
+      return { reply: local.reply, route: local.route };
+    }
+
     if (!this.aiAgent || !this.aiAgent.isInitialized()) {
       throw new Error('AI Agent is not initialized. Please configure and start the system first.');
     }
@@ -232,12 +272,48 @@ export class SecurityButler extends EventEmitter {
     try {
       const response = await this.aiAgent.sendMessage(message, options);
       this.emit('ai_message', { role: 'user', content: message });
-      this.emit('ai_response', { role: 'assistant', content: response });
+      this.emit('ai_response', { role: 'assistant', content: response.reply });
       return response;
     } catch (error) {
       console.error('[AI] Chat error:', error);
       throw error;
     }
+  }
+
+  public async confirmWriteAction(actionId: string): Promise<{
+    reply: string;
+    result?: unknown;
+  }> {
+    const pending = pendingActionStore.consume(actionId);
+    if (!pending) {
+      throw new Error('待确认操作不存在或已过期');
+    }
+
+    if (!this.aiAgent || !this.aiAgent.isInitialized()) {
+      throw new Error('AI Agent is not initialized');
+    }
+
+    const toolContext = this.aiAgent.getToolContext();
+    if (!toolContext) {
+      throw new Error('Tool context not available');
+    }
+
+    const raw = await executeTool(pending.toolName, pending.args, toolContext, {
+      maintenanceMode: true,
+      bypassConfirmation: true,
+    });
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = raw;
+    }
+
+    return {
+      reply: `已确认执行：${pending.summary}`,
+      result: parsed,
+    };
   }
 
   public getAIStatus(): AgentStatus {

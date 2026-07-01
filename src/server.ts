@@ -13,6 +13,8 @@ import {
 } from './knx/knxd-env';
 import { parseKnxprojBuffer } from './knx/knxproj-parser';
 import { fetchKnxdLogs } from './knx/knxd-logs';
+import { listManagedContainers, restartContainer } from './casaos/docker-control';
+import { createBackupArchive, restoreBackupArchive } from './system/backup';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -79,6 +81,7 @@ interface AppSettings {
     detectionInterval: number;
     logRetentionDays: number;
     theme: string;
+    maintenanceMode: boolean;
   };
 }
 
@@ -164,6 +167,7 @@ const defaultSettings: AppSettings = {
     detectionInterval: 300,
     logRetentionDays: 30,
     theme: 'dark',
+    maintenanceMode: false,
   },
 };
 
@@ -399,6 +403,7 @@ async function applySettings(settings: AppSettings): Promise<void> {
 
   butler.setDetectionInterval(settings.system.detectionInterval);
   butler.setLogRetentionDays(settings.system.logRetentionDays);
+  butler.setMaintenanceMode(!!settings.system.maintenanceMode);
 }
 
 async function testAIConnection(
@@ -1035,7 +1040,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
       res.end(JSON.stringify({
         status: 'healthy',
         uptime,
-        version: '0.6.3',
+        version: '0.7.0',
         timestamp: new Date().toISOString(),
       }));
       return true;
@@ -1093,7 +1098,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           securityScore: score?.overall ?? 0,
           scoreDetails,
           dbSize: getDbSize(),
-          version: '0.6.3',
+          version: '0.7.0',
           collectors: collectorStatuses,
           entityMetrics,
           system: sysInfo,
@@ -1749,12 +1754,99 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
         res.end(JSON.stringify({
           success: true,
           data: {
-            message: response,
-            reply: response,
+            message: response.reply,
+            reply: response.reply,
+            route: response.route,
+            pendingAction: response.pendingAction,
           },
         }));
       } catch (error: any) {
         res.statusCode = 500;
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+      return true;
+    }
+
+    if (reqPath === '/api/ai/confirm' && method === 'POST') {
+      const body = await parseBody(req);
+      const { actionId } = JSON.parse(body);
+      if (!actionId) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'actionId is required' }));
+        return true;
+      }
+      try {
+        const result = await butler.confirmWriteAction(actionId);
+        res.statusCode = 200;
+        res.end(JSON.stringify({ success: true, data: result }));
+      } catch (error: any) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+      return true;
+    }
+
+    if (reqPath === '/api/casaos/containers' && method === 'GET') {
+      try {
+        const containers = await listManagedContainers();
+        res.statusCode = 200;
+        res.end(JSON.stringify({ success: true, data: containers }));
+      } catch (error: any) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+      return true;
+    }
+
+    if (reqPath.startsWith('/api/casaos/containers/') && reqPath.endsWith('/restart') && method === 'POST') {
+      const name = decodeURIComponent(reqPath.split('/')[4] || '');
+      if (!name) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'container name is required' }));
+        return true;
+      }
+      const result = await restartContainer(name);
+      res.statusCode = result.success ? 200 : 400;
+      res.end(JSON.stringify({ success: result.success, data: result, message: result.message }));
+      return true;
+    }
+
+    if (reqPath === '/api/system/backup' && method === 'GET') {
+      try {
+        const buffer = createBackupArchive(DATA_DIR, '0.7.0');
+        const filename = `butler-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.end(buffer);
+      } catch (error: any) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+      return true;
+    }
+
+    if (reqPath === '/api/system/restore' && method === 'POST') {
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as { backupBase64?: string };
+      if (!payload.backupBase64) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'backupBase64 is required' }));
+        return true;
+      }
+      try {
+        const buffer = Buffer.from(payload.backupBase64, 'base64');
+        const manifest = restoreBackupArchive(DATA_DIR, buffer);
+        appSettings = loadSettings();
+        await applySettings(appSettings);
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          success: true,
+          data: manifest,
+          message: '配置已还原，建议重启 Butler 容器使数据库变更完全生效',
+        }));
+      } catch (error: any) {
+        res.statusCode = 400;
         res.end(JSON.stringify({ success: false, error: error.message }));
       }
       return true;
@@ -1905,7 +1997,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
 async function main() {
   console.log('========================================');
-  console.log('Smart Home Security Butler v0.6.1');
+  console.log('Smart Home Security Butler v0.7.0');
   console.log('========================================');
 
   if (!fs.existsSync(DATA_DIR)) {

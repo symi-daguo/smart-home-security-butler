@@ -94,6 +94,7 @@ const state = {
   intervals: [],
   isChatLoading: false,
   layoutPrefs: null,
+  casaosContainers: [],
 };
 
 /* ============================================================
@@ -2058,7 +2059,12 @@ function sendMessage() {
     state.isChatLoading = false;
     if (result.success && result.data) {
       const reply = result.data.reply || result.data.message || '已收到回复';
-      state.chatMessages.push({ role: 'assistant', content: reply });
+      state.chatMessages.push({
+        role: 'assistant',
+        content: reply,
+        pendingAction: result.data.pendingAction || null,
+        route: result.data.route || null,
+      });
     } else {
       state.chatMessages.push({
         role: 'assistant',
@@ -2076,6 +2082,40 @@ function sendMessage() {
   });
 }
 
+function confirmWriteAction(actionId) {
+  if (!actionId || state.isChatLoading) return;
+  state.isChatLoading = true;
+  renderChat();
+
+  apiFetch('/api/ai/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ actionId }),
+  }).then((result) => {
+    state.isChatLoading = false;
+    if (result.success && result.data) {
+      state.chatMessages.push({
+        role: 'assistant',
+        content: `${result.data.reply}\n\n结果：\`${JSON.stringify(result.data.result)}\``,
+      });
+      showToast('写操作已执行', 'success');
+    } else {
+      state.chatMessages.push({
+        role: 'assistant',
+        content: `确认执行失败：${result.error || '未知错误'}`,
+      });
+      showToast('确认执行失败', 'error');
+    }
+    renderChat();
+  }).catch((error) => {
+    state.isChatLoading = false;
+    state.chatMessages.push({
+      role: 'assistant',
+      content: `确认执行失败：${error.message}`,
+    });
+    renderChat();
+  });
+}
+
 function renderChat() {
   const container = document.getElementById('chatMessages');
   if (!container) return;
@@ -2088,6 +2128,14 @@ function renderChat() {
       <div class="msg-bubble">
         <div class="msg-sender">${msg.role === 'assistant' ? 'AI 安全管家' : '我'}</div>
         <div class="msg-content">${formatChatContent(msg.content)}</div>
+        ${msg.pendingAction ? `
+          <div class="chat-confirm-bar">
+            <button class="btn-primary btn-sm" onclick="confirmWriteAction('${escapeHtml(msg.pendingAction.actionId)}')">
+              确认执行：${escapeHtml(msg.pendingAction.summary)}
+            </button>
+          </div>
+        ` : ''}
+        ${msg.route ? `<div class="chat-route-tag">本地路由 · ${escapeHtml(msg.route)}</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -2181,6 +2229,113 @@ async function loadDiagnostics() {
   loadSystemInfo(statusData);
   loadCollectorStatus(collectors);
   loadKnxdLogs();
+  loadCasaosContainers();
+}
+
+async function loadCasaosContainers() {
+  const container = document.getElementById('casaosContainers');
+  if (!container) return;
+
+  const result = await apiFetch('/api/casaos/containers');
+  const containers = result && result.success ? result.data : [];
+  state.casaosContainers = containers;
+
+  if (!containers.length) {
+    container.innerHTML = '<p class="text-muted">无法读取 Docker 容器列表（需挂载 docker.sock）</p>';
+    return;
+  }
+
+  container.innerHTML = containers.map((item) => {
+    const stateClass = item.state === 'running' ? 'success' : (item.state === 'not_found' ? 'disabled' : 'pending');
+    const canRestart = item.state !== 'not_found';
+    return `
+      <div class="ops-card">
+        <div class="ops-card-head">
+          <div>
+            <div class="ops-card-title">${escapeHtml(item.name)}</div>
+            <div class="ops-card-sub">${escapeHtml(item.image || '未找到镜像')}</div>
+          </div>
+          <span class="status-pill status-${stateClass}">${escapeHtml(item.state)}</span>
+        </div>
+        <div class="ops-card-actions">
+          <button class="btn-outline btn-sm" ${canRestart ? '' : 'disabled'} onclick="restartCasaosContainer('${escapeHtml(item.name)}')">重启</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function restartCasaosContainer(name) {
+  if (!confirm(`确定要重启容器 ${name} 吗？`)) return;
+  const result = await apiFetch(`/api/casaos/containers/${encodeURIComponent(name)}/restart`, {
+    method: 'POST',
+  });
+  if (result.success) {
+    showToast(result.message || '容器已重启', 'success');
+  } else {
+    showToast(result.error || result.message || '重启失败', 'error');
+  }
+  setTimeout(() => loadCasaosContainers(), 2000);
+}
+
+async function downloadBackup() {
+  try {
+    const response = await fetch('/api/system/backup');
+    if (!response.ok) {
+      throw new Error('备份下载失败');
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `butler-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('备份已下载', 'success');
+  } catch (error) {
+    showToast(error.message || '备份失败', 'error');
+  }
+}
+
+async function restoreBackupFromFile(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!confirm('还原将覆盖当前数据库与设置，确定继续？')) {
+    input.value = '';
+    return;
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const backupBase64 = btoa(binary);
+    const result = await apiFetch('/api/system/restore', {
+      method: 'POST',
+      body: JSON.stringify({ backupBase64 }),
+    });
+    if (result.success) {
+      showToast(result.message || '配置已还原', 'success');
+    } else {
+      showToast(result.error || '还原失败', 'error');
+    }
+  } catch (error) {
+    showToast(error.message || '还原失败', 'error');
+  } finally {
+    input.value = '';
+  }
+}
+
+function toggleMaintenanceMode() {
+  if (!state.settings) return;
+  state.settings.system.maintenanceMode = !state.settings.system.maintenanceMode;
+  renderSettings();
+  showToast(`维护模式已${state.settings.system.maintenanceMode ? '开启' : '关闭'}`, 'info');
 }
 
 function loadSystemInfo(statusData) {
@@ -2308,6 +2463,7 @@ function getDefaultSettings() {
       detectionInterval: 300,
       logRetentionDays: 30,
       theme: 'dark',
+      maintenanceMode: false,
     },
   };
 }
@@ -2519,7 +2675,7 @@ function renderSettings() {
     <div class="settings-section">
       <div class="settings-section-header">
         <h3>系统设置</h3>
-        <p>配置检测间隔、日志保留等系统参数</p>
+        <p>配置检测间隔、日志保留、维护模式与配置备份</p>
       </div>
       <div class="card">
         <div class="card-body">
@@ -2531,6 +2687,29 @@ function renderSettings() {
             <div class="form-group">
               <label>日志保留天数</label>
               <input type="number" class="form-input" id="system-logRetentionDays" value="${state.settings.system.logRetentionDays}" min="1" max="365">
+            </div>
+          </div>
+          <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group">
+              <label>维护模式</label>
+              <p class="form-hint">开启后 AI 写操作（控制设备、执行场景等）将直接执行，无需确认</p>
+              <div class="toggle-row">
+                <div class="toggle-switch ${state.settings.system.maintenanceMode ? 'active' : ''}" onclick="toggleMaintenanceMode()"></div>
+                <span>${state.settings.system.maintenanceMode ? '已开启' : '已关闭'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group">
+              <label>配置备份与还原</label>
+              <p class="form-hint">打包 SQLite 数据库、settings.json 与 knxd .env</p>
+              <div class="backup-actions">
+                <button type="button" class="btn-outline" onclick="downloadBackup()">下载备份</button>
+                <label class="btn-outline file-upload-btn">
+                  上传还原
+                  <input type="file" accept=".zip" onchange="restoreBackupFromFile(this)" hidden>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -2763,6 +2942,9 @@ async function saveSettings() {
   const logDays = document.getElementById('system-logRetentionDays');
   if (detInterval) state.settings.system.detectionInterval = parseInt(detInterval.value, 10);
   if (logDays) state.settings.system.logRetentionDays = parseInt(logDays.value, 10);
+  if (state.settings.system.maintenanceMode == null) {
+    state.settings.system.maintenanceMode = false;
+  }
 
   const result = await apiFetch('/api/settings', {
     method: 'PUT',
