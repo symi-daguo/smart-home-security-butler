@@ -1,6 +1,6 @@
 {
   "name": "smart-home-security-butler",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Smart Home AI Security Butler - Proactive security monitoring and automation for Home Assistant, Node-RED, and KNX Gateways",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,11 +32,13 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "adm-zip": "^0.5.18",
     "axios": "^1.18.1",
     "better-sqlite3": "^12.11.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",

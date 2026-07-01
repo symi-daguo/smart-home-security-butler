@@ -23,7 +23,7 @@ export interface StorageConfig {
   logRetentionDays: number;
 }
 
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export class SQLiteStorage {
   private config: StorageConfig;
@@ -310,6 +310,45 @@ export class SQLiteStorage {
 
       this.db.prepare('UPDATE db_version SET version = ?').run(2);
       currentVersion = 2;
+    }
+
+    if (currentVersion < 3) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS knx_ets_projects (
+          id TEXT PRIMARY KEY,
+          project_name TEXT NOT NULL,
+          ets_version TEXT,
+          file_name TEXT NOT NULL,
+          file_hash TEXT NOT NULL,
+          file_path TEXT,
+          group_address_count INTEGER NOT NULL DEFAULT 0,
+          device_count INTEGER NOT NULL DEFAULT 0,
+          imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+          raw_meta TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS knx_ets_devices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id TEXT NOT NULL,
+          individual_address TEXT NOT NULL,
+          name TEXT,
+          product TEXT,
+          area TEXT,
+          line TEXT,
+          serial_number TEXT,
+          import_status TEXT NOT NULL DEFAULT 'discovered',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (project_id) REFERENCES knx_ets_projects(id) ON DELETE CASCADE,
+          UNIQUE(project_id, individual_address)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_knx_ets_devices_project ON knx_ets_devices(project_id);
+        CREATE INDEX IF NOT EXISTS idx_knx_ets_devices_addr ON knx_ets_devices(individual_address);
+        CREATE INDEX IF NOT EXISTS idx_knx_ets_projects_imported ON knx_ets_projects(imported_at);
+      `);
+
+      this.db.prepare('UPDATE db_version SET version = ?').run(3);
+      currentVersion = 3;
     }
 
     if (currentVersion < DB_VERSION) {
@@ -1628,12 +1667,19 @@ export class SQLiteStorage {
     };
   }
 
-  public async listKnxGroupAddresses(limit = 100): Promise<Array<Record<string, unknown>>> {
+  public async listKnxGroupAddresses(limit = 500, source?: string): Promise<Array<Record<string, unknown>>> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const rows = this.db.prepare(
-      'SELECT * FROM knx_group_addresses ORDER BY address ASC LIMIT ?',
-    ).all(limit) as any[];
+    let sql = 'SELECT * FROM knx_group_addresses';
+    const params: any[] = [];
+    if (source) {
+      sql += ' WHERE source = ?';
+      params.push(source);
+    }
+    sql += ' ORDER BY address ASC LIMIT ?';
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
 
     return rows.map((row) => ({
       id: row.id,
@@ -1644,6 +1690,218 @@ export class SQLiteStorage {
       inUse: row.in_use === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    }));
+  }
+
+  public async createKnxGroupAddress(entry: {
+    address: string;
+    name?: string;
+    dpt?: string;
+    source?: string;
+    inUse?: boolean;
+  }): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare(`
+      INSERT INTO knx_group_addresses (address, name, dpt, source, in_use, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      entry.address,
+      entry.name || null,
+      entry.dpt || null,
+      entry.source || 'manual',
+      entry.inUse ? 1 : 0,
+    );
+    return Number(result.lastInsertRowid);
+  }
+
+  public async updateKnxGroupAddress(
+    id: number,
+    entry: { address?: string; name?: string; dpt?: string; inUse?: boolean },
+  ): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const current = this.db.prepare('SELECT * FROM knx_group_addresses WHERE id = ?').get(id) as any;
+    if (!current) return false;
+
+    this.db.prepare(`
+      UPDATE knx_group_addresses
+      SET address = ?, name = ?, dpt = ?, in_use = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      entry.address ?? current.address,
+      entry.name ?? current.name,
+      entry.dpt ?? current.dpt,
+      entry.inUse != null ? (entry.inUse ? 1 : 0) : current.in_use,
+      id,
+    );
+    return true;
+  }
+
+  public async deleteKnxGroupAddress(id: number): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.prepare('DELETE FROM knx_group_addresses WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
+  public async importKnxGroupAddresses(
+    entries: Array<{ address: string; name?: string; dpt?: string; source?: string }>,
+    replaceSource?: string,
+  ): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const tx = this.db.transaction(() => {
+      if (replaceSource) {
+        this.db!.prepare('DELETE FROM knx_group_addresses WHERE source = ?').run(replaceSource);
+      }
+      const stmt = this.db!.prepare(`
+        INSERT INTO knx_group_addresses (address, name, dpt, source, in_use, updated_at)
+        VALUES (?, ?, ?, ?, 0, datetime('now'))
+        ON CONFLICT(address) DO UPDATE SET
+          name = COALESCE(excluded.name, knx_group_addresses.name),
+          dpt = COALESCE(excluded.dpt, knx_group_addresses.dpt),
+          source = excluded.source,
+          updated_at = datetime('now')
+      `);
+      let count = 0;
+      for (const entry of entries) {
+        stmt.run(entry.address, entry.name || null, entry.dpt || null, entry.source || 'ets-import');
+        count += 1;
+      }
+      return count;
+    });
+    return tx();
+  }
+
+  public async saveKnxEtsProject(project: {
+    id: string;
+    projectName: string;
+    etsVersion: string;
+    fileName: string;
+    fileHash: string;
+    filePath?: string;
+    groupAddressCount: number;
+    deviceCount: number;
+    rawMeta?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.prepare(`
+      INSERT INTO knx_ets_projects (
+        id, project_name, ets_version, file_name, file_hash, file_path,
+        group_address_count, device_count, imported_at, raw_meta
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_name = excluded.project_name,
+        ets_version = excluded.ets_version,
+        file_name = excluded.file_name,
+        file_hash = excluded.file_hash,
+        file_path = excluded.file_path,
+        group_address_count = excluded.group_address_count,
+        device_count = excluded.device_count,
+        imported_at = datetime('now'),
+        raw_meta = excluded.raw_meta
+    `).run(
+      project.id,
+      project.projectName,
+      project.etsVersion,
+      project.fileName,
+      project.fileHash,
+      project.filePath || null,
+      project.groupAddressCount,
+      project.deviceCount,
+      JSON.stringify(project.rawMeta || {}),
+    );
+  }
+
+  public async listKnxEtsProjects(): Promise<Array<Record<string, unknown>>> {
+    if (!this.db) throw new Error('Database not initialized');
+    const rows = this.db.prepare(
+      'SELECT * FROM knx_ets_projects ORDER BY imported_at DESC',
+    ).all() as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      projectName: row.project_name,
+      etsVersion: row.ets_version,
+      fileName: row.file_name,
+      fileHash: row.file_hash,
+      filePath: row.file_path,
+      groupAddressCount: row.group_address_count,
+      deviceCount: row.device_count,
+      importedAt: row.imported_at,
+      rawMeta: row.raw_meta ? JSON.parse(row.raw_meta) : {},
+    }));
+  }
+
+  public async getKnxEtsProject(id: string): Promise<Record<string, unknown> | null> {
+    if (!this.db) throw new Error('Database not initialized');
+    const row = this.db.prepare('SELECT * FROM knx_ets_projects WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      projectName: row.project_name,
+      etsVersion: row.ets_version,
+      fileName: row.file_name,
+      fileHash: row.file_hash,
+      filePath: row.file_path,
+      groupAddressCount: row.group_address_count,
+      deviceCount: row.device_count,
+      importedAt: row.imported_at,
+      rawMeta: row.raw_meta ? JSON.parse(row.raw_meta) : {},
+    };
+  }
+
+  public async replaceKnxEtsDevices(
+    projectId: string,
+    devices: Array<{
+      individualAddress: string;
+      name?: string;
+      product?: string;
+      area?: string;
+      line?: string;
+      serialNumber?: string;
+    }>,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const tx = this.db.transaction(() => {
+      this.db!.prepare('DELETE FROM knx_ets_devices WHERE project_id = ?').run(projectId);
+      const stmt = this.db!.prepare(`
+        INSERT INTO knx_ets_devices (
+          project_id, individual_address, name, product, area, line, serial_number, import_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'discovered')
+      `);
+      for (const device of devices) {
+        stmt.run(
+          projectId,
+          device.individualAddress,
+          device.name || null,
+          device.product || null,
+          device.area || null,
+          device.line || null,
+          device.serialNumber || null,
+        );
+      }
+    });
+    tx();
+  }
+
+  public async listKnxEtsDevices(projectId: string): Promise<Array<Record<string, unknown>>> {
+    if (!this.db) throw new Error('Database not initialized');
+    const rows = this.db.prepare(
+      'SELECT * FROM knx_ets_devices WHERE project_id = ? ORDER BY individual_address ASC',
+    ).all(projectId) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      projectId: row.project_id,
+      individualAddress: row.individual_address,
+      name: row.name,
+      product: row.product,
+      area: row.area,
+      line: row.line,
+      serialNumber: row.serial_number,
+      importStatus: row.import_status,
+      createdAt: row.created_at,
     }));
   }
 }

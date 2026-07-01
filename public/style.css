@@ -2993,6 +2993,75 @@ html, body {
   }
 }
 
+.knx-table-wrap {
+  overflow-x: auto;
+}
+
+.knx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.knx-table th,
+.knx-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+  text-align: left;
+  vertical-align: top;
+}
+
+.knx-table th {
+  color: var(--text-secondary, #9aa4b2);
+  font-weight: 500;
+}
+
+.knx-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.knx-toolbar input,
+.knx-toolbar select {
+  flex: 1;
+  min-width: 180px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+  background: var(--bg-primary, #0f1115);
+  color: var(--text-primary, #fff);
+}
+
+.knx-upload-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.knx-log-view {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0b0d11;
+  color: #c7d2e0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 @media (max-width: 768px) {
   .content {
     padding: 16px;

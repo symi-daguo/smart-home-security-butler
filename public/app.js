@@ -1505,11 +1505,23 @@ function switchKnxTab(tab) {
   document.querySelectorAll('.knx-tab').forEach((el) => {
     el.classList.toggle('active', el.dataset.knxTab === tab);
   });
-  document.getElementById('knxPanelOverview').style.display = tab === 'overview' ? 'block' : 'none';
-  document.getElementById('knxPanelConfig').style.display = tab === 'config' ? 'block' : 'none';
-  if (tab === 'config') {
-    loadKnxdConfigForm();
-  }
+  const panels = {
+    overview: 'knxPanelOverview',
+    config: 'knxPanelConfig',
+    ets: 'knxPanelEts',
+    address: 'knxPanelAddress',
+    discover: 'knxPanelDiscover',
+  };
+  Object.entries(panels).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = key === tab ? 'block' : 'none';
+  });
+
+  if (tab === 'config') loadKnxdConfigForm();
+  if (tab === 'overview') loadKnxOverview();
+  if (tab === 'ets') loadKnxEtsProjects();
+  if (tab === 'address') loadAddressBook();
+  if (tab === 'discover') loadKnxDevices();
 }
 
 async function loadKnxStudioPage() {
@@ -1599,6 +1611,255 @@ async function saveKnxdConfig(event) {
   } else {
     showToast(result?.error || '保存失败', 'error');
   }
+}
+
+async function loadKnxEtsProjects() {
+  const container = document.getElementById('knxEtsBody');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state">加载中...</div>';
+
+  const result = await apiFetch('/api/knx/ets/projects');
+  const projects = result?.success ? result.data : [];
+  state._knxProjects = projects;
+
+  if (!projects.length) {
+    container.innerHTML = '<div class="empty-state">暂无导入项目，请上传 .knxproj 文件</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="knx-table">
+      <thead><tr><th>项目</th><th>ETS</th><th>组地址</th><th>设备</th><th>导入时间</th><th>操作</th></tr></thead>
+      <tbody>
+        ${projects.map((p, index) => `
+          <tr>
+            <td>${escapeHtml(p.projectName || p.fileName)}</td>
+            <td>${escapeHtml(p.etsVersion || '--')}</td>
+            <td>${p.groupAddressCount ?? 0}</td>
+            <td>${p.deviceCount ?? 0}</td>
+            <td>${escapeHtml(p.importedAt ? new Date(p.importedAt).toLocaleString() : '--')}</td>
+            <td>
+              <button class="btn-ghost-sm" onclick="selectKnxProject(${index})">查看设备</button>
+              <button class="btn-ghost-sm" onclick="importProjectAddressesByIndex(${index})">导入地址簿</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  if (!state._selectedKnxProjectId && projects[0]) {
+    state._selectedKnxProjectId = projects[0].id;
+  }
+}
+
+function selectKnxProject(index) {
+  const project = state._knxProjects?.[index];
+  if (!project) return;
+  state._selectedKnxProjectId = project.id;
+  switchKnxTab('discover');
+}
+
+async function uploadKnxproj(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.knxproj')) {
+    showToast('请选择 .knxproj 文件', 'error');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = String(reader.result || '').split(',')[1];
+    showToast('正在解析 ETS 项目...', 'info');
+    const result = await apiFetch('/api/knx/ets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, data: base64, importAddresses: true }),
+    });
+    if (result?.success) {
+      state._selectedKnxProjectId = result.data.projectId;
+      showToast(`已导入：${result.data.projectName}（组地址 ${result.data.groupAddressCount}，设备 ${result.data.deviceCount}）`, 'success');
+      await loadKnxEtsProjects();
+      await loadAddressBook();
+      await loadKnxDevices();
+    } else {
+      showToast(result?.error || '导入失败', 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function importProjectAddressesByIndex(index) {
+  const project = state._knxProjects?.[index];
+  if (!project) return;
+  await importProjectAddresses(project.id);
+}
+
+async function importProjectAddresses(projectId) {
+  const result = await apiFetch('/api/knx/address-book/import-from-project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId }),
+  });
+  if (result?.success) {
+    showToast(`已导入 ${result.data.imported} 条组地址`, 'success');
+    await loadAddressBook();
+  } else {
+    showToast(result?.error || '导入失败', 'error');
+  }
+}
+
+async function loadAddressBook() {
+  const container = document.getElementById('knxAddressBookBody');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state">加载中...</div>';
+
+  const source = document.getElementById('knxAddressSourceFilter')?.value || '';
+  const query = source ? `?source=${encodeURIComponent(source)}` : '';
+  const result = await apiFetch(`/api/knx/address-book${query}`);
+  const entries = result?.success ? result.data : [];
+  state._knxAddressBook = entries;
+  filterAddressBook();
+}
+
+function filterAddressBook() {
+  const container = document.getElementById('knxAddressBookBody');
+  if (!container) return;
+  const keyword = (document.getElementById('knxAddressSearch')?.value || '').trim().toLowerCase();
+  const entries = (state._knxAddressBook || []).filter((entry) => {
+    if (!keyword) return true;
+    return `${entry.address} ${entry.name || ''} ${entry.dpt || ''}`.toLowerCase().includes(keyword);
+  });
+
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty-state">暂无组地址记录</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="knx-table">
+      <thead><tr><th>地址</th><th>名称</th><th>DPT</th><th>来源</th><th>使用中</th><th>操作</th></tr></thead>
+      <tbody>
+        ${entries.map((entry) => `
+          <tr>
+            <td class="mono">${escapeHtml(entry.address)}</td>
+            <td>${escapeHtml(entry.name || '--')}</td>
+            <td>${escapeHtml(entry.dpt || '--')}</td>
+            <td>${escapeHtml(entry.source || '--')}</td>
+            <td>${entry.inUse ? '是' : '否'}</td>
+            <td>
+              <button class="btn-ghost-sm" onclick="editAddressBookEntry(${entry.id})">编辑</button>
+              <button class="btn-ghost-sm" onclick="deleteAddressBookEntry(${entry.id})">删除</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function showAddressBookForm(entry) {
+  const address = prompt('组地址 (如 1/0/1)', entry?.address || '');
+  if (!address) return;
+  const name = prompt('名称', entry?.name || '') || '';
+  const dpt = prompt('DPT', entry?.dpt || '') || '';
+  saveAddressBookEntry(entry?.id, { address, name, dpt });
+}
+
+async function editAddressBookEntry(id) {
+  const entry = (state._knxAddressBook || []).find((e) => e.id === id);
+  if (!entry) return;
+  showAddressBookForm(entry);
+}
+
+async function saveAddressBookEntry(id, payload) {
+  const result = id
+    ? await apiFetch(`/api/knx/address-book/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    : await apiFetch('/api/knx/address-book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+  if (result?.success) {
+    showToast(id ? '地址已更新' : '地址已创建', 'success');
+    await loadAddressBook();
+  } else {
+    showToast(result?.error || '保存失败', 'error');
+  }
+}
+
+async function deleteAddressBookEntry(id) {
+  if (!confirm('确定删除该组地址？')) return;
+  const result = await apiFetch(`/api/knx/address-book/${id}`, { method: 'DELETE' });
+  if (result?.success) {
+    showToast('已删除', 'success');
+    await loadAddressBook();
+  } else {
+    showToast(result?.error || '删除失败', 'error');
+  }
+}
+
+async function loadKnxDevices() {
+  const container = document.getElementById('knxDiscoverBody');
+  if (!container) return;
+
+  if (!state._selectedKnxProjectId) {
+    const projectsResult = await apiFetch('/api/knx/ets/projects');
+    const projects = projectsResult?.success ? projectsResult.data : [];
+    state._knxProjects = projects;
+    state._selectedKnxProjectId = projects[0]?.id || '';
+  }
+
+  if (!state._selectedKnxProjectId) {
+    container.innerHTML = '<div class="empty-state">请先导入 ETS 项目</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="empty-state">加载中...</div>';
+  const result = await apiFetch(`/api/knx/ets/devices?projectId=${encodeURIComponent(state._selectedKnxProjectId)}`);
+  const devices = result?.success ? result.data : [];
+
+  if (!devices.length) {
+    container.innerHTML = '<div class="empty-state">该项目未解析到物理设备</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="knx-table">
+      <thead><tr><th>个体地址</th><th>名称</th><th>产品</th><th>区域</th><th>线路</th><th>状态</th></tr></thead>
+      <tbody>
+        ${devices.map((device) => `
+          <tr>
+            <td class="mono">${escapeHtml(device.individualAddress)}</td>
+            <td>${escapeHtml(device.name || '--')}</td>
+            <td>${escapeHtml(device.product || '--')}</td>
+            <td>${escapeHtml(device.area || '--')}</td>
+            <td>${escapeHtml(device.line || '--')}</td>
+            <td>${escapeHtml(device.importStatus || 'discovered')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadKnxdLogs() {
+  const view = document.getElementById('knxdLogView');
+  if (!view) return;
+  view.textContent = '加载中...';
+  const result = await apiFetch('/api/knxd/logs?lines=80');
+  if (!result?.success) {
+    view.textContent = '无法读取 knxd 日志';
+    return;
+  }
+  view.textContent = result.data?.text || result.data?.error || '（无日志）';
 }
 
 function loadCoreStats(statusData, scenes = []) {
@@ -1919,6 +2180,7 @@ async function loadDiagnostics() {
 
   loadSystemInfo(statusData);
   loadCollectorStatus(collectors);
+  loadKnxdLogs();
 }
 
 function loadSystemInfo(statusData) {
@@ -1960,6 +2222,16 @@ function loadCollectorStatus(collectors) {
       const isOnline = nr.status === 'connected' || nr.status === 'online';
       nrEl.textContent = isOnline ? '已连接' : (nr.enabled ? '连接中' : '未配置');
       nrEl.className = 'status-pill status-' + (isOnline ? 'success' : (nr.enabled ? 'pending' : 'disabled'));
+    }
+  }
+
+  const knxdEl = document.getElementById('diagKnxd');
+  if (knxdEl) {
+    const knxd = collectors.find(c => c.type === 'knxd');
+    if (knxd) {
+      const isOnline = knxd.status === 'connected' || knxd.status === 'online';
+      knxdEl.textContent = isOnline ? '已连接' : (knxd.enabled ? '连接中' : '未配置');
+      knxdEl.className = 'status-pill status-' + (isOnline ? 'success' : (knxd.enabled ? 'pending' : 'disabled'));
     }
   }
 }

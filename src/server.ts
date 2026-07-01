@@ -11,6 +11,9 @@ import {
   readKnxdEnv,
   writeKnxdEnv,
 } from './knx/knxd-env';
+import { parseKnxprojBuffer } from './knx/knxproj-parser';
+import { fetchKnxdLogs } from './knx/knxd-logs';
+import * as crypto from 'crypto';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as pathModule from 'path';
@@ -23,6 +26,7 @@ const butler = new SecurityButler();
 const PUBLIC_DIR = pathModule.join(__dirname, '..', 'public');
 const DATA_DIR = process.env.DATA_DIR || pathModule.join(__dirname, '..', 'data');
 const SETTINGS_FILE = pathModule.join(DATA_DIR, 'settings.json');
+const KNX_PROJECTS_DIR = pathModule.join(DATA_DIR, 'knx-projects');
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -832,6 +836,12 @@ async function syncKnxGatewayConfigSnapshot(): Promise<void> {
   }
 }
 
+function ensureKnxProjectsDir(): void {
+  if (!fs.existsSync(KNX_PROJECTS_DIR)) {
+    fs.mkdirSync(KNX_PROJECTS_DIR, { recursive: true });
+  }
+}
+
 function getDbSize(): number {
   try {
     const dbPath = pathModule.join(DATA_DIR, 'security-butler.db');
@@ -1025,7 +1035,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
       res.end(JSON.stringify({
         status: 'healthy',
         uptime,
-        version: '0.6.1',
+        version: '0.6.3',
         timestamp: new Date().toISOString(),
       }));
       return true;
@@ -1083,7 +1093,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           securityScore: score?.overall ?? 0,
           scoreDetails,
           dbSize: getDbSize(),
-          version: '0.6.1',
+          version: '0.6.3',
           collectors: collectorStatuses,
           entityMetrics,
           system: sysInfo,
@@ -1335,6 +1345,193 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           message: '配置已保存，请在 CasaOS 重启「KNX 网关」应用使 knxd 生效。',
         },
       }));
+      return true;
+    }
+
+    if (reqPath === '/api/knxd/logs' && method === 'GET') {
+      const lines = parseInt(url.searchParams.get('lines') || '100', 10);
+      const logs = await fetchKnxdLogs(Number.isFinite(lines) ? lines : 100);
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: logs }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/ets/projects' && method === 'GET') {
+      const storage = butler.getStorage();
+      const projects = await storage.listKnxEtsProjects();
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: projects, total: projects.length }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/ets/devices' && method === 'GET') {
+      const projectId = url.searchParams.get('projectId') || '';
+      if (!projectId) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'projectId is required' }));
+        return true;
+      }
+      const storage = butler.getStorage();
+      const devices = await storage.listKnxEtsDevices(projectId);
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: devices, total: devices.length }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/ets/import' && method === 'POST') {
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as { filename?: string; data?: string; importAddresses?: boolean };
+      if (!payload.data) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'data (base64) is required' }));
+        return true;
+      }
+
+      const fileName = payload.filename || 'project.knxproj';
+      if (!fileName.toLowerCase().endsWith('.knxproj')) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'only .knxproj files are supported' }));
+        return true;
+      }
+
+      const buffer = Buffer.from(payload.data, 'base64');
+      const parsed = parseKnxprojBuffer(buffer, fileName);
+      const projectId = crypto.createHash('sha1').update(parsed.fileHash).digest('hex').slice(0, 16);
+
+      ensureKnxProjectsDir();
+      const filePath = pathModule.join(KNX_PROJECTS_DIR, `${projectId}.knxproj`);
+      fs.writeFileSync(filePath, buffer);
+
+      const storage = butler.getStorage();
+      await storage.saveKnxEtsProject({
+        id: projectId,
+        projectName: parsed.projectName,
+        etsVersion: parsed.etsVersion,
+        fileName,
+        fileHash: parsed.fileHash,
+        filePath,
+        groupAddressCount: parsed.groupAddresses.length,
+        deviceCount: parsed.devices.length,
+        rawMeta: { xmlFileCount: parsed.xmlFileCount },
+      });
+      await storage.replaceKnxEtsDevices(projectId, parsed.devices);
+
+      let importedAddressCount = 0;
+      if (payload.importAddresses !== false && parsed.groupAddresses.length > 0) {
+        importedAddressCount = await storage.importKnxGroupAddresses(
+          parsed.groupAddresses.map((ga) => ({
+            address: ga.address,
+            name: ga.name,
+            dpt: ga.dpt,
+            source: `ets:${projectId}`,
+          })),
+        );
+      }
+
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        success: true,
+        data: {
+          projectId,
+          projectName: parsed.projectName,
+          etsVersion: parsed.etsVersion,
+          groupAddressCount: parsed.groupAddresses.length,
+          deviceCount: parsed.devices.length,
+          importedAddressCount,
+          fileHash: parsed.fileHash,
+        },
+      }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/address-book' && method === 'GET') {
+      const storage = butler.getStorage();
+      const source = url.searchParams.get('source') || undefined;
+      let entries: Array<Record<string, unknown>>;
+      if (source === 'ets-import') {
+        entries = await storage.listKnxGroupAddresses(1000);
+        entries = entries.filter((e) => String(e.source || '').startsWith('ets:'));
+      } else {
+        entries = await storage.listKnxGroupAddresses(1000, source || undefined);
+      }
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: entries, total: entries.length }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/address-book' && method === 'POST') {
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as { address: string; name?: string; dpt?: string; inUse?: boolean };
+      if (!payload.address) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'address is required' }));
+        return true;
+      }
+      const storage = butler.getStorage();
+      const id = await storage.createKnxGroupAddress({
+        address: payload.address,
+        name: payload.name,
+        dpt: payload.dpt,
+        source: 'manual',
+        inUse: payload.inUse,
+      });
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: { id } }));
+      return true;
+    }
+
+    if (reqPath.startsWith('/api/knx/address-book/') && method === 'PUT') {
+      const id = parseInt(reqPath.split('/')[4], 10);
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as { address?: string; name?: string; dpt?: string; inUse?: boolean };
+      const storage = butler.getStorage();
+      const updated = await storage.updateKnxGroupAddress(id, payload);
+      res.statusCode = updated ? 200 : 404;
+      res.end(JSON.stringify({ success: updated }));
+      return true;
+    }
+
+    if (reqPath.startsWith('/api/knx/address-book/') && method === 'DELETE') {
+      const id = parseInt(reqPath.split('/')[4], 10);
+      const storage = butler.getStorage();
+      const deleted = await storage.deleteKnxGroupAddress(id);
+      res.statusCode = deleted ? 200 : 404;
+      res.end(JSON.stringify({ success: deleted }));
+      return true;
+    }
+
+    if (reqPath === '/api/knx/address-book/import-from-project' && method === 'POST') {
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as { projectId: string };
+      if (!payload.projectId) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ success: false, error: 'projectId is required' }));
+        return true;
+      }
+      const storage = butler.getStorage();
+      const project = await storage.getKnxEtsProject(payload.projectId);
+      if (!project) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ success: false, error: 'project not found' }));
+        return true;
+      }
+      const filePath = project.filePath as string;
+      if (!filePath || !fs.existsSync(filePath)) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ success: false, error: 'project file missing on disk' }));
+        return true;
+      }
+      const parsed = parseKnxprojBuffer(fs.readFileSync(filePath), project.fileName as string);
+      const imported = await storage.importKnxGroupAddresses(
+        parsed.groupAddresses.map((ga) => ({
+          address: ga.address,
+          name: ga.name,
+          dpt: ga.dpt,
+          source: `ets:${payload.projectId}`,
+        })),
+      );
+      res.statusCode = 200;
+      res.end(JSON.stringify({ success: true, data: { imported } }));
       return true;
     }
 

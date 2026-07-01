@@ -660,9 +660,9 @@
           <div class="knx-tabs" id="knxTabs">
             <button type="button" class="knx-tab active" data-knx-tab="overview" onclick="switchKnxTab('overview')">概要</button>
             <button type="button" class="knx-tab" data-knx-tab="config" onclick="switchKnxTab('config')">网关配置</button>
-            <button type="button" class="knx-tab disabled" data-knx-tab="ets" disabled>ETS 项目</button>
-            <button type="button" class="knx-tab disabled" data-knx-tab="address" disabled>地址簿</button>
-            <button type="button" class="knx-tab disabled" data-knx-tab="discover" disabled>设备识别</button>
+            <button type="button" class="knx-tab" data-knx-tab="ets" onclick="switchKnxTab('ets')">ETS 项目</button>
+            <button type="button" class="knx-tab" data-knx-tab="address" onclick="switchKnxTab('address')">地址簿</button>
+            <button type="button" class="knx-tab" data-knx-tab="discover" onclick="switchKnxTab('discover')">设备识别</button>
           </div>
 
           <div class="knx-tab-panel active" id="knxPanelOverview">
@@ -698,6 +698,54 @@
                   </div>
                   <p class="form-warning">保存后请在 CasaOS 重启「KNX 网关」应用使 knxd 生效。</p>
                 </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="knx-tab-panel" id="knxPanelEts" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <h3>ETS 项目</h3>
+                <div class="card-actions">
+                  <label class="btn-secondary knx-upload-btn">
+                    上传 .knxproj
+                    <input type="file" id="knxprojFileInput" accept=".knxproj" hidden onchange="uploadKnxproj(event)">
+                  </label>
+                </div>
+              </div>
+              <div class="card-body" id="knxEtsBody">
+                <div class="empty-state">暂无导入项目</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="knx-tab-panel" id="knxPanelAddress" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <h3>组地址簿</h3>
+                <button type="button" class="btn-secondary" onclick="showAddressBookForm()">新建地址</button>
+              </div>
+              <div class="card-body">
+                <div class="knx-toolbar">
+                  <input type="search" id="knxAddressSearch" placeholder="搜索地址或名称" oninput="filterAddressBook()">
+                  <select id="knxAddressSourceFilter" onchange="loadAddressBook()">
+                    <option value="">全部来源</option>
+                    <option value="manual">手动</option>
+                    <option value="ets-import">ETS 导入</option>
+                  </select>
+                </div>
+                <div id="knxAddressBookBody" class="knx-table-wrap">
+                  <div class="empty-state">加载中...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="knx-tab-panel" id="knxPanelDiscover" style="display:none">
+            <div class="card">
+              <div class="card-header"><h3>ETS 设备识别</h3></div>
+              <div class="card-body" id="knxDiscoverBody">
+                <div class="empty-state">请先导入 ETS 项目</div>
               </div>
             </div>
           </div>
@@ -826,7 +874,7 @@
                 <div class="diag-list">
                   <div class="diag-row">
                     <span class="diag-label">KNX 网关</span>
-                    <span class="status-pill status-success">已连接</span>
+                    <span class="status-pill status-pending" id="diagKnxd">检查中</span>
                   </div>
                   <div class="diag-row">
                     <span class="diag-label">Home Assistant</span>
@@ -845,6 +893,16 @@
                     <span class="status-pill status-success">已连接</span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">knxd 日志</h3>
+                <button type="button" class="btn-ghost-sm" onclick="loadKnxdLogs()">刷新</button>
+              </div>
+              <div class="card-body">
+                <pre class="knx-log-view" id="knxdLogView">加载中...</pre>
               </div>
             </div>
           </div>
