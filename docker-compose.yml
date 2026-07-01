@@ -24,6 +24,11 @@ services:
       - KNX_TOKEN=${KNX_TOKEN}
       - KNX2_BASE_URL=${KNX2_BASE_URL}
       - KNX2_TOKEN=${KNX2_TOKEN}
+      - KNXD_ENV_PATH=${KNXD_ENV_PATH:-/knxd-gateway/.env}
+      - KNXD_HOST=${KNXD_HOST:-172.17.0.1}
+      - KNXD_PORT=${KNXD_PORT:-3671}
+      - KNXD_CONTAINER_NAME=${KNXD_CONTAINER_NAME:-rs232-knx-knxd}
+      - KNXD_COLLECTOR_ENABLED=${KNXD_COLLECTOR_ENABLED:-true}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - BARK_DEVICE_KEY=${BARK_DEVICE_KEY}
@@ -33,6 +38,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./data:/app/data
+      - ${KNXD_ENV_HOST_PATH:-/DATA/AppData/knx-gateway/.env}:/knxd-gateway/.env
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${PORT:-3000}:3000"
     network_mode: bridge
@@ -90,4 +97,4 @@ x-casaos:
   icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png
   category: Smart Home
   developer: symi-daguo
-  version: 0.6.1
+  version: 0.6.2

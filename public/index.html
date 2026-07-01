@@ -110,6 +110,15 @@
             </span>
             <span class="nav-text">Fusion 融合</span>
           </a>
+          <a href="#" class="nav-item" data-page="knx">
+            <span class="nav-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="18" rx="2"/>
+                <path d="M7 8l4 4-4 4M13 8l4 4-4 4"/>
+              </svg>
+            </span>
+            <span class="nav-text">KNX 工作室</span>
+          </a>
           <a href="#" class="nav-item" data-page="diagnostics">
             <span class="nav-icon-wrap">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -635,6 +644,60 @@
                   <div class="ecosystem-list" id="ecosystemList">
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page" id="page-knx" style="display:none">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">KNX 工作室</h1>
+              <p class="page-subtitle">本机 knxd 网关 · ETS :3671 · 配置与健康监控</p>
+            </div>
+          </div>
+
+          <div class="knx-tabs" id="knxTabs">
+            <button type="button" class="knx-tab active" data-knx-tab="overview" onclick="switchKnxTab('overview')">概要</button>
+            <button type="button" class="knx-tab" data-knx-tab="config" onclick="switchKnxTab('config')">网关配置</button>
+            <button type="button" class="knx-tab disabled" data-knx-tab="ets" disabled>ETS 项目</button>
+            <button type="button" class="knx-tab disabled" data-knx-tab="address" disabled>地址簿</button>
+            <button type="button" class="knx-tab disabled" data-knx-tab="discover" disabled>设备识别</button>
+          </div>
+
+          <div class="knx-tab-panel active" id="knxPanelOverview">
+            <div class="card">
+              <div class="card-header"><h3>运行概要</h3></div>
+              <div class="card-body" id="knxOverviewBody">
+                <div class="empty-state">加载中...</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="knx-tab-panel" id="knxPanelConfig" style="display:none">
+            <div class="card">
+              <div class="card-header"><h3>网关配置 (.env)</h3></div>
+              <div class="card-body">
+                <form id="knxConfigForm" class="knx-config-form" onsubmit="saveKnxdConfig(event)">
+                  <div class="form-grid">
+                    <label>物理地址 ADDRESS<input name="address" id="knxAddress" placeholder="1.1.255"></label>
+                    <label>客户端地址 CLIENT_ADDRESS<input name="clientAddress" id="knxClientAddress" placeholder="1.1.250:5"></label>
+                    <label>接口 INTERFACE
+                      <select name="interface" id="knxInterface">
+                        <option value="dummy">dummy（无硬件测试）</option>
+                        <option value="tpuart">tpuart（RS232/USB）</option>
+                      </select>
+                    </label>
+                    <label>设备路径 DEVICE<input name="device" id="knxDevice" placeholder="/dev/ttyS0"></label>
+                    <label>网关名称<input name="gatewayName" id="knxGatewayName" placeholder="RS232-KNX-Gateway"></label>
+                    <label>日志级别<input name="debugErrorLevel" id="knxDebugLevel" placeholder="info"></label>
+                  </div>
+                  <p class="form-hint" id="knxEnvPathHint">配置文件路径加载中...</p>
+                  <div class="form-actions">
+                    <button type="submit" class="btn-primary">保存配置</button>
+                  </div>
+                  <p class="form-warning">保存后请在 CasaOS 重启「KNX 网关」应用使 knxd 生效。</p>
+                </form>
               </div>
             </div>
           </div>

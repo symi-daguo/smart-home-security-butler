@@ -1,5 +1,16 @@
 import { SecurityButler, TelegramNotifier, BarkNotifier, ServerChanNotifier } from './index';
 import { DataSourceType, SeverityLevel, DetectionCategory, CollectorStatus, CollectorConfig, NotifierConfig, NotificationMessage } from './types';
+import {
+  DEFAULT_KNXD_ENV_CONFIG,
+  getKnxdContainerName,
+  getKnxdEnvPath,
+  getKnxdHealthStatus,
+  getKnxdHost,
+  getKnxdPort,
+  KnxdEnvConfig,
+  readKnxdEnv,
+  writeKnxdEnv,
+} from './knx/knxd-env';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as pathModule from 'path';
@@ -92,6 +103,14 @@ const defaultSettings: AppSettings = {
       baseUrl: 'http://172.17.0.1:5580',
       token: '',
       enabled: false,
+    },
+    {
+      id: 'knxd',
+      type: 'knxd',
+      name: 'knxd 本机',
+      baseUrl: '127.0.0.1:3671',
+      token: '',
+      enabled: true,
     },
     {
       id: 'knx-gateway',
@@ -198,6 +217,7 @@ function buildCollectorConfig(collector: AppSettings['collectors'][number]): Col
     homeassistant: DataSourceType.HomeAssistant,
     nodered: DataSourceType.NodeRed,
     'knx-gateway': DataSourceType.KnxGateway,
+    knxd: DataSourceType.Knxd,
     matter: DataSourceType.Matter,
   };
 
@@ -239,7 +259,15 @@ function buildCollectorConfig(collector: AppSettings['collectors'][number]): Col
               collectInterval: 300000,
               captureErrors: true,
             }
-          : {
+          : type === DataSourceType.Knxd
+            ? {
+                collectInterval: 60000,
+                envPath: getKnxdEnvPath(),
+                host: getKnxdHost(),
+                port: getKnxdPort(),
+                containerName: getKnxdContainerName(),
+              }
+            : {
               collectInterval: 300000,
               monitorDevices: true,
               monitorScenes: true,
@@ -266,7 +294,12 @@ async function applySettings(settings: AppSettings): Promise<void> {
   }
 
   for (const collector of settings.collectors) {
-    if (!collector.enabled || !collector.baseUrl) {
+    if (!collector.enabled) {
+      butler.removeCollector(collector.id);
+      continue;
+    }
+
+    if (collector.type !== 'knxd' && !collector.baseUrl) {
       butler.removeCollector(collector.id);
       continue;
     }
@@ -561,6 +594,30 @@ async function setupFromEnv() {
     }
   }
 
+  const knxdEnabled = process.env.KNXD_COLLECTOR_ENABLED !== 'false';
+  if (knxdEnabled) {
+    butler.addCollector({
+      id: 'knxd',
+      type: DataSourceType.Knxd,
+      baseUrl: `${getKnxdHost()}:${getKnxdPort()}`,
+      enabled: true,
+      auth: { type: 'none' },
+      config: {
+        collectInterval: 60000,
+        envPath: getKnxdEnvPath(),
+        host: getKnxdHost(),
+        port: getKnxdPort(),
+        containerName: getKnxdContainerName(),
+      },
+    });
+    console.log('[Setup] knxd collector added');
+    const knxd = appSettings.collectors.find((c) => c.id === 'knxd');
+    if (knxd) {
+      knxd.baseUrl = `${getKnxdHost()}:${getKnxdPort()}`;
+      knxd.enabled = true;
+    }
+  }
+
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || appSettings.notifications.telegram.botToken;
   const telegramChatId = process.env.TELEGRAM_CHAT_ID || appSettings.notifications.telegram.chatId;
   if (telegramBotToken && telegramChatId) {
@@ -746,6 +803,33 @@ function parseBody(req: http.IncomingMessage): Promise<string> {
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
+}
+
+async function syncKnxGatewayConfigSnapshot(): Promise<void> {
+  try {
+    const health = await getKnxdHealthStatus();
+    const config = health.config || DEFAULT_KNXD_ENV_CONFIG;
+    const storage = butler.getStorage();
+    if (!storage.isInitialized()) {
+      return;
+    }
+    await storage.upsertKnxGatewayConfig({
+      individualAddr: config.address,
+      clientAddress: config.clientAddress,
+      interfaceType: config.interface,
+      devicePath: config.device,
+      gatewayName: config.gatewayName,
+      debugErrorLevel: config.debugErrorLevel,
+      envPath: health.envPath,
+      host: health.host,
+      port: health.port,
+      containerName: health.containerName,
+      portOpen: health.portOpen,
+      containerStatus: health.containerStatus,
+    });
+  } catch (error) {
+    console.error('[KNX] Failed to sync knxd config snapshot:', error);
+  }
 }
 
 function getDbSize(): number {
@@ -973,6 +1057,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           type: config.type,
           name: config.type === 'homeassistant' ? 'Home Assistant' :
                 config.type === 'nodered' ? 'Node-RED' :
+                config.type === 'knxd' ? 'knxd 本机' :
                 config.type === 'knx-gateway' ? 'KNX 网关' : config.type,
           enabled: config.enabled,
           status: statusInfo.status || CollectorStatus.Disconnected,
@@ -1187,6 +1272,72 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
       return true;
     }
 
+    if (reqPath === '/api/knxd/status' && method === 'GET') {
+      const health = await getKnxdHealthStatus();
+      await syncKnxGatewayConfigSnapshot();
+      const dbConfig = await butler.getStorage().getKnxGatewayConfig();
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        success: true,
+        data: {
+          health,
+          dbConfig,
+          healthy: health.portOpen && health.containerStatus !== 'stopped',
+        },
+      }));
+      return true;
+    }
+
+    if (reqPath === '/api/knxd/config' && method === 'GET') {
+      const envPath = getKnxdEnvPath();
+      const config = readKnxdEnv(envPath) || { ...DEFAULT_KNXD_ENV_CONFIG };
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        success: true,
+        data: {
+          envPath,
+          envExists: fs.existsSync(envPath),
+          config,
+        },
+      }));
+      return true;
+    }
+
+    if (reqPath === '/api/knxd/config' && method === 'PUT') {
+      const body = await parseBody(req);
+      const payload = JSON.parse(body) as Partial<KnxdEnvConfig>;
+      const envPath = getKnxdEnvPath();
+      const current = readKnxdEnv(envPath) || { ...DEFAULT_KNXD_ENV_CONFIG };
+      const nextConfig: KnxdEnvConfig = {
+        address: payload.address ?? current.address,
+        clientAddress: payload.clientAddress ?? current.clientAddress,
+        interface: payload.interface ?? current.interface,
+        device: payload.device ?? current.device,
+        gatewayName: payload.gatewayName ?? current.gatewayName,
+        debugErrorLevel: payload.debugErrorLevel ?? current.debugErrorLevel,
+      };
+
+      writeKnxdEnv(nextConfig, envPath);
+      await syncKnxGatewayConfigSnapshot();
+
+      const knxdCollector = butler.getCollector('knxd');
+      if (knxdCollector) {
+        await knxdCollector.collect().catch(() => undefined);
+      }
+
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        success: true,
+        data: {
+          config: nextConfig,
+          envPath,
+          restartRequired: true,
+          message: '配置已保存，请在 CasaOS 重启「KNX 网关」应用使 knxd 生效。',
+        },
+      }));
+      return true;
+    }
+
     if (reqPath === '/api/collectors' && method === 'GET') {
       const collectors = butler.getCollectors();
       const result = collectors.map(c => {
@@ -1197,6 +1348,7 @@ async function handleApiRequest(req: http.IncomingMessage, res: http.ServerRespo
           type: config.type,
           name: config.type === 'homeassistant' ? 'Home Assistant' :
                 config.type === 'nodered' ? 'Node-RED' :
+                config.type === 'knxd' ? 'knxd 本机' :
                 config.type === 'knx-gateway' ? 'KNX 网关' : config.type,
           baseUrl: config.baseUrl,
           enabled: config.enabled,
@@ -1573,6 +1725,7 @@ async function main() {
   try {
     await butler.start();
     console.log('[Server] Security butler started successfully');
+    await syncKnxGatewayConfigSnapshot();
   } catch (error) {
     console.error('[Server] Failed to start butler:', error);
   }

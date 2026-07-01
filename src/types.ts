@@ -37,6 +37,7 @@ export enum DataSourceType {
   HomeAssistant = 'homeassistant',
   NodeRed = 'nodered',
   KnxGateway = 'knx-gateway',
+  Knxd = 'knxd',
   Matter = 'matter',
   MQTT = 'mqtt',
 }

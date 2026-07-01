@@ -23,7 +23,7 @@ export interface StorageConfig {
   logRetentionDays: number;
 }
 
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export class SQLiteStorage {
   private config: StorageConfig;
@@ -261,7 +261,59 @@ export class SQLiteStorage {
 
     const versionRow = this.db.prepare('SELECT version FROM db_version').get() as { version: number } | undefined;
     if (!versionRow) {
-      this.db.prepare('INSERT INTO db_version (version) VALUES (?)').run(DB_VERSION);
+      this.db.prepare('INSERT INTO db_version (version) VALUES (?)').run(1);
+    }
+
+    this.runMigrations();
+  }
+
+  private runMigrations(): void {
+    if (!this.db) return;
+
+    const versionRow = this.db.prepare('SELECT version FROM db_version').get() as { version: number } | undefined;
+    let currentVersion = versionRow?.version ?? 1;
+
+    if (currentVersion < 2) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS knx_gateway_config (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          mode TEXT NOT NULL DEFAULT 'router',
+          individual_addr TEXT NOT NULL DEFAULT '1.1.255',
+          client_address TEXT NOT NULL DEFAULT '1.1.250:5',
+          interface_type TEXT NOT NULL DEFAULT 'dummy',
+          device_path TEXT NOT NULL DEFAULT '/dev/ttyS0',
+          gateway_name TEXT NOT NULL DEFAULT 'RS232-KNX-Gateway',
+          debug_error_level TEXT NOT NULL DEFAULT 'info',
+          env_path TEXT,
+          host TEXT NOT NULL DEFAULT '127.0.0.1',
+          port INTEGER NOT NULL DEFAULT 3671,
+          container_name TEXT NOT NULL DEFAULT 'rs232-knx-knxd',
+          port_open INTEGER NOT NULL DEFAULT 0,
+          container_status TEXT NOT NULL DEFAULT 'unknown',
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS knx_group_addresses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          address TEXT NOT NULL UNIQUE,
+          name TEXT,
+          dpt TEXT,
+          source TEXT NOT NULL DEFAULT 'manual',
+          in_use INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_knx_ga_address ON knx_group_addresses(address);
+        CREATE INDEX IF NOT EXISTS idx_knx_ga_source ON knx_group_addresses(source);
+      `);
+
+      this.db.prepare('UPDATE db_version SET version = ?').run(2);
+      currentVersion = 2;
+    }
+
+    if (currentVersion < DB_VERSION) {
+      this.db.prepare('UPDATE db_version SET version = ?').run(DB_VERSION);
     }
   }
 
@@ -1490,6 +1542,108 @@ export class SQLiteStorage {
       lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : null,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
+    }));
+  }
+
+  public async upsertKnxGatewayConfig(config: {
+    mode?: string;
+    individualAddr: string;
+    clientAddress: string;
+    interfaceType: string;
+    devicePath: string;
+    gatewayName: string;
+    debugErrorLevel: string;
+    envPath: string;
+    host: string;
+    port: number;
+    containerName: string;
+    portOpen: boolean;
+    containerStatus: string;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.prepare(`
+      INSERT INTO knx_gateway_config (
+        id, mode, individual_addr, client_address, interface_type, device_path,
+        gateway_name, debug_error_level, env_path, host, port, container_name,
+        port_open, container_status, updated_at
+      ) VALUES (
+        1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        mode = excluded.mode,
+        individual_addr = excluded.individual_addr,
+        client_address = excluded.client_address,
+        interface_type = excluded.interface_type,
+        device_path = excluded.device_path,
+        gateway_name = excluded.gateway_name,
+        debug_error_level = excluded.debug_error_level,
+        env_path = excluded.env_path,
+        host = excluded.host,
+        port = excluded.port,
+        container_name = excluded.container_name,
+        port_open = excluded.port_open,
+        container_status = excluded.container_status,
+        updated_at = datetime('now')
+    `).run(
+      config.mode || 'router',
+      config.individualAddr,
+      config.clientAddress,
+      config.interfaceType,
+      config.devicePath,
+      config.gatewayName,
+      config.debugErrorLevel,
+      config.envPath,
+      config.host,
+      config.port,
+      config.containerName,
+      config.portOpen ? 1 : 0,
+      config.containerStatus,
+    );
+  }
+
+  public async getKnxGatewayConfig(): Promise<Record<string, unknown> | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const row = this.db.prepare('SELECT * FROM knx_gateway_config WHERE id = 1').get() as any;
+    if (!row) {
+      return null;
+    }
+
+    return {
+      mode: row.mode,
+      individualAddr: row.individual_addr,
+      clientAddress: row.client_address,
+      interfaceType: row.interface_type,
+      devicePath: row.device_path,
+      gatewayName: row.gateway_name,
+      debugErrorLevel: row.debug_error_level,
+      envPath: row.env_path,
+      host: row.host,
+      port: row.port,
+      containerName: row.container_name,
+      portOpen: row.port_open === 1,
+      containerStatus: row.container_status,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public async listKnxGroupAddresses(limit = 100): Promise<Array<Record<string, unknown>>> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const rows = this.db.prepare(
+      'SELECT * FROM knx_group_addresses ORDER BY address ASC LIMIT ?',
+    ).all(limit) as any[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      address: row.address,
+      name: row.name,
+      dpt: row.dpt,
+      source: row.source,
+      inUse: row.in_use === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     }));
   }
 }

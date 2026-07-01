@@ -555,6 +555,7 @@ function navigateTo(page) {
     devices: '设备列表',
     security: '安全中心',
     fusion: 'Fusion 融合',
+    knx: 'KNX 工作室',
     ai: 'AI 助手',
     chat: 'AI 助手',
     diagnostics: '系统诊断',
@@ -576,7 +577,12 @@ function navigateTo(page) {
   if (page === 'settings') loadSettings();
   if (page === 'security') loadSecurityData();
   if (page === 'fusion') loadFusionPage();
+  if (page === 'knx') loadKnxStudioPage();
   if (page === 'diagnostics') loadDiagnostics();
+
+  if (page !== 'knx') {
+    history.replaceState(null, '', '#/' + page);
+  }
 }
 
 /* ============================================================
@@ -1444,7 +1450,8 @@ function loadProtocols(collectors) {
   }
 
   const protocolMap = {
-    'knx-gateway': { name: 'KNX', icon: 'knx' },
+    'knx-gateway': { name: 'KNX REST', icon: 'knx' },
+    knxd: { name: 'knxd 本机', icon: 'knx' },
     'knx': { name: 'KNX', icon: 'knx' },
     'zigbee': { name: 'Zigbee', icon: 'zigbee' },
     'matter': { name: 'Matter', icon: 'matter' },
@@ -1490,6 +1497,110 @@ function showProtocolDetail(index) {
     ['运行状态', p.status === 'online' ? '已连接' : p.status === 'pending' ? '连接中' : '离线'],
     ['协议类型', p.name],
   ]);
+}
+
+/* ============================================================
+   KNX Studio
+   ============================================================ */
+
+function switchKnxTab(tab) {
+  document.querySelectorAll('.knx-tab').forEach((el) => {
+    el.classList.toggle('active', el.dataset.knxTab === tab);
+  });
+  document.getElementById('knxPanelOverview').style.display = tab === 'overview' ? 'block' : 'none';
+  document.getElementById('knxPanelConfig').style.display = tab === 'config' ? 'block' : 'none';
+  if (tab === 'config') {
+    loadKnxdConfigForm();
+  }
+}
+
+async function loadKnxStudioPage() {
+  history.replaceState(null, '', '#/knx');
+  switchKnxTab('overview');
+  await Promise.all([loadKnxOverview(), loadKnxdConfigForm()]);
+}
+
+async function loadKnxOverview() {
+  const container = document.getElementById('knxOverviewBody');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state">加载中...</div>';
+
+  const result = await apiFetch('/api/knxd/status');
+  if (!result || !result.success) {
+    container.innerHTML = '<div class="empty-state">无法获取 knxd 状态</div>';
+    return;
+  }
+
+  const { health, healthy } = result.data;
+  const cfg = health.config || {};
+  const statusColor = healthy ? 'var(--accent-success)' : 'var(--accent-warning, #f5a623)';
+  const statusText = healthy ? '运行正常' : health.envExists ? '部分异常' : '未配置';
+
+  container.innerHTML = `
+    <div class="diag-grid">
+      <div class="diag-item"><span class="diag-label">总体状态</span><span class="diag-value" style="color:${statusColor}">${statusText}</span></div>
+      <div class="diag-item"><span class="diag-label">KNXnet/IP</span><span class="diag-value">${escapeHtml(health.host)}:${health.port}</span></div>
+      <div class="diag-item"><span class="diag-label">端口监听</span><span class="diag-value">${health.portOpen ? '是' : '否'}</span></div>
+      <div class="diag-item"><span class="diag-label">Docker 容器</span><span class="diag-value">${escapeHtml(health.containerName)} (${escapeHtml(health.containerStatus)})</span></div>
+      <div class="diag-item"><span class="diag-label">物理地址</span><span class="diag-value">${escapeHtml(cfg.address || '--')}</span></div>
+      <div class="diag-item"><span class="diag-label">接口</span><span class="diag-value">${escapeHtml(cfg.interface || '--')} / ${escapeHtml(cfg.device || '--')}</span></div>
+      <div class="diag-item"><span class="diag-label">配置文件</span><span class="diag-value">${escapeHtml(health.envPath)}</span></div>
+      <div class="diag-item"><span class="diag-label">检测时间</span><span class="diag-value">${escapeHtml(new Date(health.checkedAt).toLocaleString())}</span></div>
+    </div>
+  `;
+}
+
+async function loadKnxdConfigForm() {
+  const result = await apiFetch('/api/knxd/config');
+  const hint = document.getElementById('knxEnvPathHint');
+  if (!result || !result.success) {
+    if (hint) hint.textContent = '无法读取 knxd 配置';
+    return;
+  }
+
+  const { envPath, envExists, config } = result.data;
+  if (hint) {
+    hint.textContent = `${envExists ? '配置文件' : '将创建配置文件'}：${envPath}`;
+  }
+
+  const fields = {
+    knxAddress: config.address,
+    knxClientAddress: config.clientAddress,
+    knxInterface: config.interface,
+    knxDevice: config.device,
+    knxGatewayName: config.gatewayName,
+    knxDebugLevel: config.debugErrorLevel,
+  };
+
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el && value != null) el.value = value;
+  });
+}
+
+async function saveKnxdConfig(event) {
+  event.preventDefault();
+  const payload = {
+    address: document.getElementById('knxAddress')?.value,
+    clientAddress: document.getElementById('knxClientAddress')?.value,
+    interface: document.getElementById('knxInterface')?.value,
+    device: document.getElementById('knxDevice')?.value,
+    gatewayName: document.getElementById('knxGatewayName')?.value,
+    debugErrorLevel: document.getElementById('knxDebugLevel')?.value,
+  };
+
+  const result = await apiFetch('/api/knxd/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (result?.success) {
+    showToast(result.data?.message || '配置已保存');
+    await loadKnxOverview();
+  } else {
+    showToast(result?.error || '保存失败', 'error');
+  }
 }
 
 function loadCoreStats(statusData, scenes = []) {
@@ -2443,7 +2554,10 @@ function init() {
 
   updateGatewayStatus();
 
-  navigateTo('overview');
+  const hashPage = (location.hash || '').replace(/^#\/?/, '');
+  const allowedPages = ['overview', 'spaces', 'scenes', 'devices', 'security', 'fusion', 'knx', 'diagnostics', 'settings', 'ai'];
+  const initialPage = allowedPages.includes(hashPage) ? hashPage : 'overview';
+  navigateTo(initialPage);
 
   const traceInterval = setInterval(() => {
     if (state.currentPage === 'overview') {

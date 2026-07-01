@@ -4,6 +4,7 @@ import { SQLiteStorage } from './storage/sqlite-storage';
 import { HACollector } from './collectors/ha-collector';
 import { NodeRedCollector } from './collectors/nodered-collector';
 import { KnxCollector } from './collectors/knx-collector';
+import { KnxdCollector } from './collectors/knxd-collector';
 import { MatterCollector } from './collectors/matter-collector';
 // import { MQTTCollector } from './collectors/mqtt-collector';
 import { BaseCollector } from './collectors/base-collector';
@@ -335,6 +336,8 @@ export class SecurityButler extends EventEmitter {
         return new NodeRedCollector(config);
       case DataSourceType.KnxGateway:
         return new KnxCollector(config);
+      case DataSourceType.Knxd:
+        return new KnxdCollector(config);
       case DataSourceType.Matter:
         return new MatterCollector(config);
       // case DataSourceType.MQTT:
@@ -1395,6 +1398,7 @@ export { SQLiteStorage } from './storage/sqlite-storage';
 export { HACollector } from './collectors/ha-collector';
 export { NodeRedCollector } from './collectors/nodered-collector';
 export { KnxCollector } from './collectors/knx-collector';
+export { KnxdCollector } from './collectors/knxd-collector';
 export { MatterCollector } from './collectors/matter-collector';
 export { BaseCollector } from './collectors/base-collector';
 export { BaseDetector, DetectionContext } from './detectors/base-detector';
